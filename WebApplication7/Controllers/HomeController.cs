@@ -28,6 +28,7 @@ namespace WebApplication7.Controllers
         }
         public ActionResult test()
         {
+            ViewBag.Message = "Your Test page.";
             return View();
         }
     }
