@@ -26,10 +26,10 @@ namespace WebApplication7.Controllers
 
             return View();
         }
-        public ActionResult test()
-        {
-            ViewBag.Message = "Your Test page.";
-            return View();
-        }
+        //public ActionResult test()
+        //{
+        //    ViewBag.Message = "Your Test page.";
+        //    return View();
+        //}
     }
 }
