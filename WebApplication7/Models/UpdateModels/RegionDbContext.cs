@@ -1,14 +1,14 @@
-namespace WebApplication7.Models
+namespace WebApplication7.Models.UpdateModels
 {
     using System;
     using System.Data.Entity;
     using System.ComponentModel.DataAnnotations.Schema;
     using System.Linq;
 
-    public partial class MainDbContext : DbContext
+    public partial class RegionDbContext : DbContext
     {
-        public MainDbContext()
-            : base("name=MainDbContext")
+        public RegionDbContext()
+            : base("name=RegionDbContext")
         {
         }
 
@@ -30,9 +30,13 @@ namespace WebApplication7.Models
                 .IsUnicode(false);
 
             modelBuilder.Entity<Region>()
-            .HasMany(e => e.People)
-            .WithOptional(e => e.Region)
-            .HasForeignKey(e => e.PersonRegionID);
+                .Property(e => e.RegionName)
+                .IsUnicode(false);
+
+            modelBuilder.Entity<Region>()
+                .HasMany(e => e.People)
+                .WithOptional(e => e.Region)
+                .HasForeignKey(e => e.PersonRegionID);
         }
     }
 }

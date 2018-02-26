@@ -202,12 +202,20 @@
     <Compile Include="Migrations\201802231346058_addPersonTable.Designer.cs">
       <DependentUpon>201802231346058_addPersonTable.cs</DependentUpon>
     </Compile>
+    <Compile Include="Migrations\201802261332550_addRegionTableAndRelationshipToPerson.cs" />
+    <Compile Include="Migrations\201802261332550_addRegionTableAndRelationshipToPerson.Designer.cs">
+      <DependentUpon>201802261332550_addRegionTableAndRelationshipToPerson.cs</DependentUpon>
+    </Compile>
     <Compile Include="Migrations\Configuration.cs" />
     <Compile Include="Models\AccountViewModels.cs" />
     <Compile Include="Models\IdentityModels.cs" />
     <Compile Include="Models\MainDbContext.cs" />
     <Compile Include="Models\ManageViewModels.cs" />
     <Compile Include="Models\Person.cs" />
+    <Compile Include="Models\Region.cs" />
+    <Compile Include="Models\UpdateModels\Person.cs" />
+    <Compile Include="Models\UpdateModels\Region.cs" />
+    <Compile Include="Models\UpdateModels\RegionDbContext.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Startup.cs" />
   </ItemGroup>
@@ -276,7 +284,6 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="App_Data\" />
-    <Folder Include="Models\UpdateModels\" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="fonts\glyphicons-halflings-regular.woff" />
@@ -297,6 +304,9 @@
   <ItemGroup>
     <EmbeddedResource Include="Migrations\201802231346058_addPersonTable.resx">
       <DependentUpon>201802231346058_addPersonTable.cs</DependentUpon>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Migrations\201802261332550_addRegionTableAndRelationshipToPerson.resx">
+      <DependentUpon>201802261332550_addRegionTableAndRelationshipToPerson.cs</DependentUpon>
     </EmbeddedResource>
   </ItemGroup>
   <PropertyGroup>

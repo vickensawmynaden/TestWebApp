@@ -17,7 +17,7 @@ namespace WebApplication7.Controllers
         // GET: People
         public ActionResult Index()
         {
-            return View(db.People.ToList());
+            return View(db.People.Include(e=>e.Region).ToList());
         }
 
         // GET: People/Details/5
@@ -46,7 +46,7 @@ namespace WebApplication7.Controllers
         // more details see https://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Create([Bind(Include = "PersonID,PersonFirstName,PersonLastName,PersonDateOfBirth,PersonGender")] Person person)
+        public ActionResult Create([Bind(Include = "PersonID,PersonFirstName,PersonLastName,PersonDateOfBirth,PersonGender,PersonRegionID")] Person person)
         {
             if (ModelState.IsValid)
             {
@@ -72,6 +72,8 @@ namespace WebApplication7.Controllers
             }
 
             ViewBag.gender = person.PersonGender;
+
+            ViewBag.PersonRegionID = new SelectList(db.Regions, "RegionID", "RegionName",person.PersonRegionID);
             return View(person);
         }
 
@@ -80,7 +82,7 @@ namespace WebApplication7.Controllers
         // more details see https://go.microsoft.com/fwlink/?LinkId=317598.
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public ActionResult Edit([Bind(Include = "PersonID,PersonFirstName,PersonLastName,PersonDateOfBirth,PersonGender")] Person person)
+        public ActionResult Edit([Bind(Include = "PersonID,PersonFirstName,PersonLastName,PersonDateOfBirth,PersonGender,PersonRegionID")] Person person)
         {
             if (ModelState.IsValid)
             {
