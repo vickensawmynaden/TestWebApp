@@ -1,4 +1,4 @@
-namespace WebApplication7.Models
+namespace WebApplication7.Models.UpdateModels
 {
     using System;
     using System.Collections.Generic;
