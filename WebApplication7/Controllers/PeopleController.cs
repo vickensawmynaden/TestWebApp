@@ -70,6 +70,8 @@ namespace WebApplication7.Controllers
             {
                 return HttpNotFound();
             }
+
+            ViewBag.gender = person.PersonGender;
             return View(person);
         }
 
