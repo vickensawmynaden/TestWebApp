@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Iron Fist Arena</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    { "imports": {
+        "three": "./vendor/three/three.module.min.js",
+        "three/addons/": "./vendor/three/addons/"
+    } }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- In-match HUD -->
+  <div id="hud" class="hidden">
+    <div class="hud-top">
+      <div class="player p1">
+        <div class="name-row"><span class="pname" id="p1name">KAI</span><span class="rounds" id="p1rounds"></span></div>
+        <div class="bar"><div class="bar-lag" id="p1lag"></div><div class="bar-fill" id="p1hp"></div></div>
+        <div class="rage-tag" id="p1rage">RAGE</div>
+      </div>
+      <div class="timer" id="timer">60</div>
+      <div class="player p2">
+        <div class="name-row"><span class="rounds" id="p2rounds"></span><span class="pname" id="p2name">VIKTOR</span></div>
+        <div class="bar"><div class="bar-lag" id="p2lag"></div><div class="bar-fill" id="p2hp"></div></div>
+        <div class="rage-tag" id="p2rage">RAGE</div>
+      </div>
+    </div>
+    <div class="combo p1c" id="combo1"><span class="hits"></span><span class="lbl">HITS</span><span class="dmg"></span></div>
+    <div class="combo p2c" id="combo2"><span class="hits"></span><span class="lbl">HITS</span><span class="dmg"></span></div>
+    <div class="callout" id="callout1"></div>
+    <div class="callout right" id="callout2"></div>
+    <div id="announce"></div>
+    <div id="training-panel" class="hidden">
+      <div class="tp-title">TRAINING</div>
+      <div id="tp-info"></div>
+      <div class="tp-help">Dummy: <b id="tp-dummy">stand</b> — change in pause menu · Reset: <span id="tp-resetkey">R / Select</span></div>
+      <div id="movelist" class="hidden"></div>
+    </div>
+    <div id="ctrl-warning" class="hidden"></div>
+  </div>
+
+  <!-- Menus -->
+  <div id="screens"></div>
+
+  <noscript>This game requires JavaScript and WebGL.</noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
