@@ -492,7 +492,7 @@ export class World {
     let scale = 1;
     const n = d.combo.hits; // hits before this one
     if (n > 0) scale = Math.max(0.3, 1 - 0.1 * n);
-    if (airborneVictim || d.combo.juggle > 0) scale *= 0.75;
+    if (airborneVictim || d.combo.juggle > 0) scale *= 0.85;
     if (d.state === 'wall') scale *= 0.8;
     const dmg = this.applyDamage(a, d, m.dmg, scale);
     const reaction = (counter && m.onCH) || m.onHit || null;

@@ -125,7 +125,7 @@ class App {
       { label: 'Resume', action: () => this.resume() },
       { label: 'Dummy behaviour', hidden: () => !m.training, value: () => m.dummy.mode, adjust: (d) => { const i = DUMMY_MODES.indexOf(m.dummy.mode); m.dummy.mode = DUMMY_MODES[(i + d + DUMMY_MODES.length) % DUMMY_MODES.length]; } },
       { label: 'P1 Rage', hidden: () => !m.training, value: () => (m.world.fighters[0].rage ? 'ON' : 'OFF'), adjust: () => m.setTrainingRage(!m.world.fighters[0].rage) },
-      { label: 'Show move list in HUD', hidden: () => !m.training, value: () => (document.getElementById('movelist').classList.contains('hidden') ? 'OFF' : 'ON'), adjust: () => this.toggleHudMoves() },
+      { label: 'HUD move list', hidden: () => !m.training, value: () => (document.getElementById('movelist').classList.contains('hidden') ? 'OFF' : 'ON'), adjust: () => this.toggleHudMoves() },
       { label: 'Reset positions', hidden: () => !m.training, action: () => { m.resetTraining(); this.resume(); } },
       { label: 'Restart match', hidden: () => m.training, action: () => this.rematch() },
       { label: 'Move List', action: () => this.ui.push(new MoveListScreen(this, m.chars[0])) },
@@ -202,7 +202,7 @@ class App {
           this.acc -= STEP; steps++;
         }
         if (steps === 5) this.acc = 0;
-        this.ui.hud.update(m);
+        this.ui.hud.update(m, dt);
         if (m.phase === 'matchOver' && m.phaseT > 150 && !this.resultShown) {
           this.resultShown = true;
           this.ui.push(new ResultScreen(this, m));

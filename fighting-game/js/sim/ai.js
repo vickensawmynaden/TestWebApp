@@ -129,7 +129,8 @@ export class TrainingDummy {
         // Reads the incoming attack level: crouch for lows, stand for everything else.
         if (opp.state === 'attack' && opp.move && opp.move.level === 'low') return dirInput(inp, self, 1);
         if (self.state === 'down') return (this.t % 30 === 0) ? buttons(inp, '1') : inp;
-        return dirInput(inp, self, 4);
+        inp.guard = true;            // stand guard in place (holding back would walk away)
+        return inp;
       }
       case 'jump': return (this.t % 50 < 2) ? dirInput(inp, self, 8) : (this.t % 50 < 12 ? dirInput(inp, self, 8) : inp);
       case 'cpu': return this.cpu.input(world, self);

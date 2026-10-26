@@ -19,8 +19,19 @@ export class UI {
 
   get top() { return this.stack[this.stack.length - 1] || null; }
 
-  push(screen) { this.stack.push(screen); screen.mount(this.root); }
-  pop() { const s = this.stack.pop(); s?.unmount(); this.top?.refresh?.(); return s; }
+  // Only the top screen is visible so stacked menus never show through each other.
+  push(screen) {
+    if (this.top?.node) this.top.node.style.display = 'none';
+    this.stack.push(screen);
+    screen.mount(this.root);
+  }
+  pop() {
+    const s = this.stack.pop();
+    s?.unmount();
+    if (this.top?.node) this.top.node.style.display = '';
+    this.top?.refresh?.();
+    return s;
+  }
   replace(screen) { while (this.stack.length) this.stack.pop().unmount(); this.push(screen); }
   clear() { while (this.stack.length) this.stack.pop().unmount(); }
 
@@ -410,26 +421,26 @@ class HUD {
   announce(text, big, small) {
     this.ann.textContent = text;
     this.ann.className = 'show' + (big ? ' ko' : '') + (small ? ' small' : '');
-    this.annTimer = small ? 40 : 75;
+    this.annTimer = small ? 0.7 : 1.25;   // seconds
   }
   callout(side, text) {
     const n = $(side === 0 ? '#callout1' : '#callout2');
     n.textContent = text; n.classList.add('show');
-    this.callT[side] = 70;
+    this.callT[side] = 1.2;
   }
   combo(side, hits, dmg) {
     const n = $(side === 0 ? '#combo1' : '#combo2');
     $('.hits', n).textContent = hits;
     $('.dmg', n).textContent = `${dmg} DAMAGE`;
     n.classList.add('show');
-    this.comboT[side] = 80;
+    this.comboT[side] = 1.3;
   }
   rounds(node, wins, need) {
     let h = '';
     for (let i = 0; i < need; i++) h += `<i class="${i < wins ? 'won' : ''}"></i>`;
     if (node.innerHTML !== h) node.innerHTML = h;
   }
-  update(match) {
+  update(match, dt = 1 / 60) {
     const w = match.world;
     w.fighters.forEach((f, i) => {
       const pct = Math.max(0, f.hp / f.def.hp * 100), lag = Math.max(0, f.displayHp / f.def.hp * 100);
@@ -446,10 +457,10 @@ class HUD {
     const secs = Math.ceil(match.timer / 60);
     if (secs !== this.lastTimer) { const t = $('#timer'); t.textContent = match.roundTime === 0 ? '∞' : secs; t.classList.toggle('urgent', secs <= 10); this.lastTimer = secs; }
     for (const i of [0, 1]) {
-      if (this.comboT[i] > 0 && --this.comboT[i] === 0) $(i === 0 ? '#combo1' : '#combo2').classList.remove('show');
-      if (this.callT[i] > 0 && --this.callT[i] === 0) $(i === 0 ? '#callout1' : '#callout2').classList.remove('show');
+      if (this.comboT[i] > 0 && (this.comboT[i] -= dt) <= 0) { this.comboT[i] = 0; $(i === 0 ? '#combo1' : '#combo2').classList.remove('show'); }
+      if (this.callT[i] > 0 && (this.callT[i] -= dt) <= 0) { this.callT[i] = 0; $(i === 0 ? '#callout1' : '#callout2').classList.remove('show'); }
     }
-    if (this.annTimer > 0 && --this.annTimer === 0) this.ann.classList.remove('show');
+    if (this.annTimer > 0 && (this.annTimer -= dt) <= 0) { this.annTimer = 0; this.ann.classList.remove('show'); }
     if (match.training) this.training(match);
   }
   training(match) {

@@ -11,7 +11,7 @@ const DOWN = new THREE.Vector3(0, -1, 0);
 const BUILDS = {
   kai: {
     shoulderW: 0.19, hipW: 0.095, upperArm: 0.29, foreArm: 0.26, thigh: 0.44, shin: 0.44,
-    armR: 0.046, foreR: 0.04, thighR: 0.088, shinR: 0.062, torsoW: 1.0, torsoD: 0.62, neckR: 0.052,
+    armR: 0.05, foreR: 0.043, thighR: 0.088, shinR: 0.062, torsoW: 1.0, torsoD: 0.62, neckR: 0.052,
     colors: { skin: 0xc58f68, top: 0x1c4fbf, trim: 0x0d0f14, pants: 0x14161b, sash: 0x2f74ff, glove: 0x15171c, shoe: 0x0c0d11, hair: 0x0b0d14, accent: 0x3d8bff },
   },
   viktor: {
@@ -144,8 +144,8 @@ export class FighterModel {
     // deltoids
     this.delts = [];
     for (const s of [-1, 1]) {
-      const d = this.mesh(new THREE.SphereGeometry(b.armR * 1.6, 16, 12), M.skin, this.chestG, b.shoulderW * s, 0.265, 0);
-      d.scale.set(1, 1.05, 1.1);
+      const d = this.mesh(new THREE.SphereGeometry(b.armR * 1.38, 16, 12), M.skin, this.chestG, b.shoulderW * s * 0.95, 0.262, 0);
+      d.scale.set(0.95, 1.0, 1.08);
       this.delts.push(d);
     }
     // neck & head

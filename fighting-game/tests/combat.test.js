@@ -311,3 +311,23 @@ test('training mode: dummy never dies and refills, reset button repositions', ()
   m.tick([r, null]);
   assert.ok(Math.abs(m.world.fighters[0].pos.x + 1.3) < 0.2);
 });
+
+test('training dummy "guard all" blocks highs, mids and lows without drifting', () => {
+  const m = new Match({ mode: 'training' });
+  m.dummy.mode = 'guard all';
+  const w = m.world;
+  w.fighters[0].pos.x = -0.5; w.fighters[1].pos.x = 0.5;
+  let drift = 0;
+  const seq = [['1', 5], ['1', 3], ['4', 2]];   // jab (high), elbow df+1 (mid), sweep d+4 (low)
+  for (const [btn, dir] of seq) {
+    w.fighters[0].pos.x = w.fighters[1].pos.x - 1.0;
+    m.tick([inp(0, dir, btn), null]);
+    const before = w.fighters[1].pos.x;
+    for (let k = 0; k < 70; k++) m.tick([inp(0, k < 3 ? dir : 5), null]);
+    drift = Math.max(drift, Math.abs(w.fighters[1].pos.x - before));
+    assert.equal(w.fighters[0].lastMoveInfo.result, 'block', `${dir}+${btn} should be blocked`);
+  }
+  assert.equal(w.fighters[1].hp, w.fighters[1].def.hp);
+  assert.ok(drift < 0.6, `dummy only moves by block pushback (${drift.toFixed(2)} m)`);
+});
+
