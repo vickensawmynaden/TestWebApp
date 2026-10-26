@@ -140,7 +140,7 @@ export class GameView {
     });
     const cm = this.cameraMode(match);
     this.rig.update(dt, { a: pa, b: pb, faceA: fa.face, faceB: fb.face, camDir: w.camDir, ...cm });
-    this.stage.update(dt, { x: (pa.x + pb.x) / 2, z: (pa.z + pb.z) / 2 });
+    this.stage.update(dt, { x: (pa.x + pb.x) / 2, z: (pa.z + pb.z) / 2 }, this.camera.position);
     this.effects.update(dt * (w.slowmo > 0 ? 0.4 : 1));
     if (this.bloom.enabled) this.composer.render(dt); else this.renderer.render(this.scene, this.camera);
   }

@@ -191,7 +191,8 @@ pause menu, or the training HUD.
 - Throws with break windows, throw clash, a parry, power-crush armour and Rage Arts.
 - Arena walls with wall splats and wall hits, body push-boxes, and arena clamping.
 - Camera that stays perpendicular to the fighters' axis without flipping, zooms with distance,
-  plays cinematic intro, KO and win orbits, and shakes on heavy hits.
+  plays cinematic intro, KO and win orbits, and shakes on heavy hits. Arena walls fade out
+  when the camera is behind them so they never hide the fight.
 - Procedural characters: sculpted lathe meshes, PBR skin, cloth and metal, faces, hair,
   costumes. A two-bone IK rig keeps feet planted.
 - 23 attack animations synced to frame data, plus stances, walk and run cycles, guard, hit

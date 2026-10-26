@@ -71,11 +71,16 @@ export class Stage {
     const neonA = new THREE.MeshStandardMaterial({ color: 0x3a7bff, emissive: 0x3a7bff, emissiveIntensity: 2.2 });
     const neonB = new THREE.MeshStandardMaterial({ color: 0xff3a3a, emissive: 0xff3a3a, emissiveIntensity: 2.2 });
     const L = ARENA_HALF * 2 + 0.6, h = 0.95, th = 0.3, off = ARENA_HALF + th / 2;
-    const defs = [[0, off, 0, neonA], [0, -off, 0, neonB], [off, 0, Math.PI / 2, neonA], [-off, 0, Math.PI / 2, neonB]];
-    for (const [x, z, ry, neon] of defs) {
+    const defs = [[0, off, 0, neonA, 'z', 1], [0, -off, 0, neonB, 'z', -1], [off, 0, Math.PI / 2, neonA, 'x', 1], [-off, 0, Math.PI / 2, neonB, 'x', -1]];
+    this.walls = [];
+    for (const [x, z, ry, neon, axis, sign] of defs) {
       const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = ry;
-      const wall = new THREE.Mesh(new THREE.BoxGeometry(L, h, th), stone); wall.position.y = h / 2; wall.castShadow = wall.receiveShadow = true; g.add(wall);
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(L, 0.06, th + 0.08), metal); rail.position.y = h + 0.03; rail.castShadow = true; g.add(rail);
+      // Each wall has its own materials so it can fade out when the camera is behind it.
+      const ws = stone.clone(), wm = metal.clone();
+      ws.transparent = wm.transparent = true;
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(L, h, th), ws); wall.position.y = h / 2; wall.castShadow = wall.receiveShadow = true; g.add(wall);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(L, 0.06, th + 0.08), wm); rail.position.y = h + 0.03; rail.castShadow = true; g.add(rail);
+      this.walls.push({ mats: [ws, wm], axis, sign, opacity: 1 });
       const strip = new THREE.Mesh(new THREE.BoxGeometry(L - 0.4, 0.025, 0.02), neon); strip.position.set(0, 0.12, th / 2 + 0.01); g.add(strip);
       const strip2 = strip.clone(); strip2.position.z = -th / 2 - 0.01; g.add(strip2);
       this.group.add(g);
@@ -198,8 +203,16 @@ export class Stage {
   }
 
   // Follow the fighters with the shadow camera for crisp shadows.
-  update(dt, center) {
+  update(dt, center, camPos = null) {
     this.time += dt;
+    if (camPos) {
+      for (const w of this.walls) {
+        const behind = camPos[w.axis] * w.sign > ARENA_HALF - 0.2;
+        const target = behind ? 0.18 : 1;
+        w.opacity += (target - w.opacity) * Math.min(1, dt * 8);
+        for (const m of w.mats) { m.opacity = w.opacity; m.depthWrite = w.opacity > 0.95; }
+      }
+    }
     this.updateEmbers(this.time);
     const flick = 2.3 + Math.sin(this.time * 13) * 0.2 + Math.sin(this.time * 7.3) * 0.2;
     for (const l of this.lanterns) l.emissiveIntensity = flick;

@@ -40,12 +40,12 @@ export class CameraRig {
       if (ctx.cut) this.snap = true;
     } else {
       // Gameplay framing
-      let dist = 2.2 + sep * 0.95;
+      let dist = 2.9 + sep * 0.9;
       if (aspect < 1.5) dist *= 1.5 / Math.max(0.6, aspect);
-      dist = Math.min(11, Math.max(3.2, dist));
+      dist = Math.min(11.5, Math.max(3.8, dist));
       const air = Math.max(a.y, b.y);
-      const h = 1.25 + dist * 0.08 + air * 0.25;
-      mid.y = 0.95 + air * 0.35;
+      const h = 1.3 + dist * 0.06 + air * 0.25;
+      mid.y = 0.98 + air * 0.35;
       this.desired.set(mid.x + camDir.x * dist, h, mid.z + camDir.z * dist);
     }
     const k = this.snap ? 1 : 1 - Math.exp(-dt * follow);
