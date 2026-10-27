@@ -2,9 +2,9 @@
 // Usage: (server running) node tests/e2e/visual-metrics.cjs [url] [p1] [p2] [frames] [models=skinned|procedural]
 //
 // A CPU-vs-CPU match runs for N simulation frames. After every rendered frame the world positions
-// of both fighters' ankles are sampled. A foot counts as planted when it is within 1.5 cm of the
-// lowest height that foot reached; "glide" is horizontal ankle travel between consecutive samples
-// in which the foot stayed planted, i.e. feet sliding on the floor.
+// of both fighters' ankles are sampled. A foot counts as planted when the Animator's plant weight
+// for it is above 0.5 on both samples; "glide" is horizontal ankle travel between consecutive
+// samples in which the foot stayed planted, i.e. feet sliding on the floor.
 // Note: in this container Chromium renders with SwiftShader (CPU), so fps is far below real GPUs;
 // compare runs against each other, not against the 60 fps target.
 const { chromium } = require('playwright');
@@ -35,7 +35,7 @@ const [url = 'http://localhost:8080/', p1 = 'ren', p2 = 'maya', frames = '600', 
       view.models.forEach((mod, i) => {
         for (const limb of ['lFoot', 'rFoot']) {
           const p = mod.limbWorld(limb, view.tmpL.clone());
-          row.feet.push([p.x, p.y, p.z, match.world.fighters[i].state]);
+          row.feet.push([p.x, p.y, p.z, match.world.fighters[i].state, view.animators[i].pose[48 + (limb === 'lFoot' ? 0 : 1)]]);
         }
       });
       S.samples.push(row);
@@ -59,8 +59,8 @@ const [url = 'http://localhost:8080/', p1 = 'ren', p2 = 'maya', frames = '600', 
     if (df <= 0 || df > 8) continue; // skip pauses / long gaps
     for (let k = 0; k < nFeet; k++) {
       const pa = a.feet[k], pb = b.feet[k];
-      const grounded = ['idle', 'walkF', 'walkB', 'attack', 'block', 'crouch', 'sidestep', 'dash', 'backdash'].includes(pb[3]);
-      if (!grounded || pa[1] > minY[k] + 0.015 || pb[1] > minY[k] + 0.015) continue;
+      // planted = the animation timeline's plant weight (what the foot lock follows) on both samples
+      if (!(pa[4] > 0.5 && pb[4] > 0.5)) continue;
       const d = Math.hypot(pb[0] - pa[0], pb[2] - pa[2]) / df;
       glide += d * df; plantedFrames += df; worst = Math.max(worst, d); perFrame.push(d);
     }
