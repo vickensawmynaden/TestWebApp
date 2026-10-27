@@ -3,6 +3,9 @@
 // The announcer uses the browser's speech synthesis when available (text fallback otherwise).
 // These are clearly placeholder-grade assets intended to be swapped for recorded audio later.
 
+// Base pitch (Hz) of each fighter's synthesised effort grunt.
+const VOICE_PITCH = { ren: 140, maya: 230, viktor: 90, leila: 220, caio: 135, sora: 240, kai: 150 };
+
 export class AudioEngine {
   constructor() {
     this.ctx = null;
@@ -104,14 +107,14 @@ export class AudioEngine {
   }
 
   // Formant-filtered buzz: a short vocal "hup" / "ugh" (synthetic placeholder for voice acting).
-  grunt(t, char = 'kai', big = false) {
+  grunt(t, char = 'ren', big = false) {
     const c = this.ctx;
-    const base = (char === 'viktor' ? 95 : 150) * (0.92 + Math.random() * 0.16);
+    const base = (VOICE_PITCH[char] || 150) * (0.92 + Math.random() * 0.16);
     const o = c.createOscillator(); o.type = 'sawtooth';
     o.frequency.setValueAtTime(base * 1.15, t); o.frequency.exponentialRampToValueAtTime(base * 0.8, t + 0.18);
     const g = c.createGain();
     const mix = c.createGain(); mix.gain.value = 0.5;
-    const formants = char === 'viktor' ? [[600, 6], [1000, 8], [2400, 10]] : [[700, 6], [1200, 8], [2600, 10]];
+    const formants = VOICE_PITCH[char] < 120 ? [[600, 6], [1000, 8], [2400, 10]] : [[700, 6], [1200, 8], [2600, 10]];
     for (const [f, q] of formants) { const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q; o.connect(bp); bp.connect(mix); }
     mix.connect(g); g.connect(this.sfxBus);
     this.env(g, t, 0.01, big ? 0.9 : 0.55, big ? 0.28 : 0.16);

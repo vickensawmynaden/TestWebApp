@@ -34,6 +34,9 @@ function initPads() {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  const badRequests = [];
+  page.on('response', (r) => { if (r.status() >= 400) badRequests.push(`${r.status()} ${r.url()}`); });
+  page.on('requestfailed', (r) => badRequests.push(`failed ${r.url()}`));
   await page.addInitScript(initPads);
   await page.goto(URL);
   await page.waitForFunction(() => window.__app && window.__app.view);
@@ -60,7 +63,7 @@ function initPads() {
   check('controller can navigate menus', topName === 'MenuScreen', topName);
 
   // --- start a versus match and skip intro
-  await ev(() => { window.__app.startMatch('versus', 'kai', 'viktor'); window.__app.match.skipIntro(); });
+  await ev(() => { window.__app.startMatch('versus', 'ren', 'maya'); window.__app.match.skipIntro(); });
   await page.waitForFunction(() => window.__app.match.phase === 'fight', null, { timeout: 15000 });
   const start = await ev(() => window.__app.match.world.fighters.map((f) => ({ x: f.pos.x, z: f.pos.z })));
 
@@ -89,12 +92,12 @@ function initPads() {
   await ev(() => window.__press(0, 2, true)); await frames(3); await ev(() => window.__press(0, 2, false));
   await page.waitForFunction(() => window.__app.match.world.fighters[0].lastMoveInfo, null, { timeout: 5000 });
   const m1 = await ev(() => window.__app.match.world.fighters[0].lastMoveInfo);
-  check('P1 face button 1 performs Jab', m1 && m1.name === 'Jab', m1 && `${m1.name} → ${m1.result}`);
+  check('P1 face button 1 performs Ren\'s signature Anchor Jab', m1 && m1.name === 'Anchor Jab', m1 && `${m1.name} → ${m1.result}`);
   await frames(30);
   await ev(() => window.__press(1, 0, true)); await frames(3); await ev(() => window.__press(1, 0, false));
   await page.waitForFunction(() => window.__app.match.world.fighters[1].lastMoveInfo, null, { timeout: 5000 });
   const m2 = await ev(() => window.__app.match.world.fighters[1].lastMoveInfo);
-  check('P2 DirectInput button performs Iron Jab', m2 && m2.name === 'Iron Jab', m2 && `${m2.name} → ${m2.result}`);
+  check('P2 DirectInput button performs Maya\'s signature Reef Jab', m2 && m2.name === 'Reef Jab', m2 && `${m2.name} → ${m2.result}`);
 
   // --- damage + HUD
   await ev(() => { const w = window.__app.match.world; w.fighters[0].pos.x = -0.45; w.fighters[1].pos.x = 0.45; });
@@ -159,11 +162,32 @@ function initPads() {
   check('KO ends the round', ph === 'ko' || ph === 'roundOver', ph);
   await page.waitForFunction(() => window.__app.match.round === 2 && window.__app.match.phase === 'fight', null, { timeout: 30000 }).catch(() => {});
   const r2 = await ev(() => ({ round: window.__app.match.round, wins: window.__app.match.wins, hp: window.__app.match.world.fighters.map((f) => f.hp) }));
-  check('next round starts with reset health', r2.round === 2 && r2.wins[0] === 1 && r2.hp[1] === 170, JSON.stringify(r2));
+  check('next round starts with reset health', r2.round === 2 && r2.wins[0] === 1 && r2.hp[1] === 100, JSON.stringify(r2));
   await ev(() => window.__app.rematch());
   const rm = await ev(() => ({ round: window.__app.match.round, wins: window.__app.match.wins }));
   check('rematch restarts without reloading', rm.round === 1 && rm.wins[0] === 0, JSON.stringify(rm));
 
+  // --- every roster fighter can be selected through the select screen and renders in a match
+  const SIX = ['ren', 'maya', 'viktor', 'leila', 'caio', 'sora'];
+  for (let i = 0; i < SIX.length; i += 2) {
+    const [a, b] = [SIX[i], SIX[i + 1]];
+    const ok = await ev(([a, b]) => {
+      const app = window.__app;
+      app.toCharSelect('versus');
+      const cs = app.ui.top;
+      const ids = ['ren', 'maya', 'viktor', 'leila', 'caio', 'sora', 'kai'];
+      cs.cur = [ids.indexOf(a), ids.indexOf(b)];
+      cs.confirm(0); cs.confirm(1);
+      const m = app.match;
+      return m && m.chars[0] === a && m.chars[1] === b && app.view.models.length === 2 && app.view.models.every((x) => x.root.children.length > 0);
+    }, [a, b]);
+    await frames(10);
+    check(`select + render ${a} vs ${b}`, ok);
+  }
+  // portraits come from the reference sheet
+  const img = await ev(() => new Promise((res) => { const i = new Image(); i.onload = () => res([i.naturalWidth, i.naturalHeight]); i.onerror = () => res(null); i.src = 'public/references/fighter-roster.png'; }));
+  check('reference portrait sheet loads', img && img[0] === 1536 && img[1] === 1024, JSON.stringify(img));
+  check('no missing assets (HTTP errors)', badRequests.length === 0, badRequests.join(' | '));
   check('no page errors', errors.length === 0, errors.join(' | '));
   await browser.close();
   const failed = results.filter((r) => !r.ok).length;

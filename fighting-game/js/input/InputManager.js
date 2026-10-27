@@ -70,6 +70,7 @@ export class InputManager {
   constructor(win = window) {
     this.win = win;
     this.keys = new Set();
+    this.latched = new Set();     // keys pressed since the last poll (very short taps still register)
     this.slots = [null, null];        // device ids
     this.waiting = [null, null];      // gamepad id string a disconnected slot is waiting for
     this.pads = new Map();            // deviceId -> { index, id, mapping, hatAxes:Set, connected }
@@ -244,14 +245,14 @@ export class InputManager {
       c.done(key(e.code));
       return;
     }
-    if (down) this.keys.add(e.code); else this.keys.delete(e.code);
+    if (down) { this.keys.add(e.code); this.latched.add(e.code); } else this.keys.delete(e.code);
     if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
     if (down) this.lastActivity.set(e.code.startsWith('Arrow') || e.code.startsWith('Numpad') ? 'kb2' : 'kb1', performance.now());
   }
 
   readBinding(b, gp) {
     switch (b.type) {
-      case 'key': return this.keys.has(b.code);
+      case 'key': return this.keys.has(b.code) || this.latched.has(b.code);
       case 'button': { const x = gp?.buttons[b.index]; return !!x && (x.pressed || x.value > 0.5); }
       case 'axis': { const v = gp?.axes[b.index]; return v !== undefined && v * b.dir > STICK_THRESHOLD; }
       case 'hat': { const h = decodeHat(gp?.axes[b.index]); return !!h && h[b.dir]; }
@@ -308,6 +309,7 @@ export class InputManager {
       if (any) this.lastActivity.set(devId, performance.now());
       this.state.set(devId, s);
     }
+    this.latched.clear();
     return [this.slotInput(0), this.slotInput(1)];
   }
 

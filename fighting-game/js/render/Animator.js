@@ -4,9 +4,24 @@ import { POSE_LAYOUT as L, POSE_SIZE, STANCES, STATE_POSES, ATTACKS, SHOWCASE, c
 
 const BLEND = { attack: 2.5, hit: 1.5, block: 2, air: 3, down: 6, default: 6 };
 
+// Locomotion / idle personality per fighter. Purely visual: hurtboxes come from the sim posture,
+// so idle sways (e.g. Caio's ginga) never grant evasion.
+//   bounce: idle bob amount, rate: bob speed, walk: walk-cycle period (frames), run: run period,
+//   sway: side-to-side ginga amplitude (m), stomp: heavy-step pelvis drop.
+const STYLE = {
+  ren: { bounce: 0.5, rate: 0.08, walk: 28, run: 16 },
+  maya: { bounce: 2.2, rate: 0.2, walk: 20, run: 14 },
+  viktor: { bounce: 0.5, rate: 0.06, walk: 36, run: 20, stomp: 0.03 },
+  leila: { bounce: 1.4, rate: 0.17, walk: 22, run: 15 },
+  caio: { bounce: 0.6, rate: 0.07, walk: 26, run: 16, sway: 0.16 },
+  sora: { bounce: 0.35, rate: 0.09, walk: 26, run: 16 },
+  kai: { bounce: 1.0, rate: 0.16, walk: 24, run: 15 },
+};
+
 export class Animator {
   constructor(charId) {
     this.charId = charId;
+    this.style = STYLE[charId] || STYLE.ren;
     this.stance = compilePose(STANCES[charId] || STANCES.kai);
     this.states = {};
     for (const [k, v] of Object.entries(STATE_POSES)) this.states[k] = compilePose(v, this.stance);
@@ -59,21 +74,22 @@ export class Animator {
 
   computeTarget(f, world, t) {
     const T = this.target, st = this.states;
-    const kai = this.charId === 'kai';
+    const sty = this.style;
     switch (f.state) {
       case 'idle': case 'intro':
         if (f.state === 'intro') { this.showcase(this.intro, t, 70); break; }
         T.set(this.stance);
-        this.breathe(T, t, kai ? 1 : 0.6);
+        this.breathe(T, t, sty.bounce);
+        if (sty.sway) this.ginga(T, t);
         break;
       case 'walkF': case 'walkB': {
         T.set(this.stance);
-        this.walkCycle(T, t, f.state === 'walkF' ? 1 : -1, kai ? 24 : 30);
+        this.walkCycle(T, t, f.state === 'walkF' ? 1 : -1, sty.walk);
         break;
       }
       case 'run': {
         T.set(st.run);
-        const ph = t / (kai ? 15 : 18) * Math.PI * 2;
+        const ph = t / sty.run * Math.PI * 2;
         const s = Math.sin(ph), c = Math.cos(ph);
         T[L.lFoot + 2] = 0.05 + s * 0.32; T[L.lFoot + 1] = 0.075 + Math.max(0, c) * 0.18;
         T[L.rFoot + 2] = 0.05 - s * 0.32; T[L.rFoot + 1] = 0.075 + Math.max(0, -c) * 0.18;
@@ -167,11 +183,20 @@ export class Animator {
     this.breathe(this.target, t, 0.5);
   }
 
+  // Capoeira ginga: rocking weight shift between the feet (visual only).
+  ginga(T, t) {
+    const s = Math.sin(t * 0.07), sw = this.style.sway;
+    T[L.pelvis] += s * sw * 0.5;
+    T[L.lFoot + 2] += s * sw; T[L.rFoot + 2] -= s * sw;
+    T[L.chest + 1] += s * 14; T[L.hipRot + 1] += s * 10;
+    T[L.rHand] += s * 0.12; T[L.lHand + 1] += -s * 0.05;
+  }
+
   breathe(T, t, amt) {
-    const s = Math.sin(t * (this.charId === 'kai' ? 0.16 : 0.08));
+    const s = Math.sin(t * this.style.rate);
     T[L.pelvis + 1] += s * 0.012 * amt;
-    T[L.chest] += s * 1.5 * amt;
-    T[L.lHand + 1] += s * 0.012 * amt; T[L.rHand + 1] += Math.sin(t * 0.16 + 1) * 0.012 * amt;
+    T[L.chest] += s * 1.5 * Math.min(1, amt);
+    T[L.lHand + 1] += s * 0.008 * amt; T[L.rHand + 1] += Math.sin(t * this.style.rate + 1) * 0.008 * amt;
   }
 
   walkCycle(T, t, dir, period) {
@@ -182,7 +207,8 @@ export class Animator {
     const rear = dir > 0 ? Math.max(0, -s) : Math.max(0, s);
     T[L.lFoot + 2] += s * 0.08 * dir; T[L.lFoot + 1] += lead * 0.045;
     T[L.rFoot + 2] += -s * 0.08 * dir; T[L.rFoot + 1] += rear * 0.045;
-    T[L.pelvis + 1] += Math.abs(Math.cos(ph)) * 0.015 - 0.01;
+    T[L.pelvis + 1] += Math.abs(Math.cos(ph)) * 0.015 - 0.01 - (this.style.stomp ? Math.max(0, -Math.cos(ph * 2)) * this.style.stomp : 0);
+    if (this.style.stomp) T[L.chest + 2] += s * 4;   // heavy weight shift side to side
     T[L.pelvis + 2] += s * 0.02 * dir;
     T[L.chest] += dir * 2;
   }

@@ -1,13 +1,21 @@
 // Menus and HUD. Every screen is navigable with any controller (D-pad/stick + face buttons),
 // the keyboard (arrows/WASD + Enter/Escape) or the mouse.
 import { ACTIONS, describeBinding } from '../input/InputManager.js';
-import { CHARACTERS } from '../sim/characters.js';
+import { CHARACTERS, ROSTER } from '../sim/characters.js';
 import { DUMMY_MODES } from '../sim/ai.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const CHAR_IDS = Object.keys(CHARACTERS);
+const CHAR_IDS = ROSTER;
+const GRID_COLS = 3;   // the six reference fighters form a 3 x 2 grid, Kai (bonus) sits below
+
+// Portrait crop of the concept sheet (3 x 2 cells) for a fighter, or a colour card for Kai.
+export function portraitStyle(id) {
+  const pt = CHARACTERS[id].portrait;
+  if (!pt) return '';
+  return `background-image:url('${pt.image}');background-size:300% 200%;background-position:${pt.col * 50}% ${pt.row * 100}%`;
+}
 
 export class UI {
   constructor(app) {
@@ -130,18 +138,22 @@ export class CharSelectScreen {
     this.node.appendChild(el('div', 'title', this.mode === 'training' ? 'TRAINING — SELECT' : this.mode === 'cpu' ? 'VERSUS CPU — SELECT' : 'VERSUS — SELECT'));
     this.body = el('div', 'cs');
     this.node.appendChild(this.body);
-    this.node.appendChild(el('div', 'hint', this.single ? 'Left/Right to choose · [1]/Enter to confirm · [4]/Esc to go back' : 'Each player uses their own controller · Left/Right to choose · confirm with [1] or [3] · cancel with [4]'));
+    this.node.appendChild(el('div', 'hint', this.single ? 'D-pad / arrows to choose · [1]/Enter to confirm · [4]/Esc to go back' : 'Each player uses their own controller · D-pad / stick to choose · confirm with [1] or [3] · cancel with [4]'));
     root.appendChild(this.node);
     this.refresh();
   }
   unmount() { this.node.remove(); }
   side(i) {
-    const c = CHARACTERS[CHAR_IDS[this.cur[i]]];
+    const id = CHAR_IDS[this.cur[i]];
+    const c = CHARACTERS[id];
+    const sig = c.moves.filter((m) => m.signature).map((m) => `<div class="sig"><b>${esc(m.cmd.toUpperCase().replace(/\+/g, ' + '))}</b> ${esc(m.name)} <i>${m.level}</i></div>`).join('');
     const pips = (n) => Array.from({ length: 5 }, (_, k) => `<i class="${k < n ? 'on' : ''}"></i>`).join('');
     const label = this.single && i === 1 ? (this.mode === 'training' ? 'DUMMY' : 'CPU') : `PLAYER ${i + 1}`;
     const dev = this.single && i === 1 ? '' : `<div class="device">${esc(this.app.input.deviceName(this.app.input.slots[i]))}</div>`;
-    return `<div class="who">${label}</div><div class="cname">${c.name}</div><div class="style">${esc(c.style)}</div>
+    return `<div class="cs-head"><div class="big-portrait ${id}" style="${portraitStyle(id)}"></div><div>
+      <div class="who">${label}</div><div class="cname">${esc(c.fullName.toUpperCase())}</div><div class="style">${esc(c.style)}</div></div></div>
       <div class="blurb">${esc(c.blurb)}</div>
+      <div class="sigs">${sig}</div>
       ${Object.entries(c.stats).map(([k, v]) => `<div class="stat"><span>${k.toUpperCase()}</span><span class="pips">${pips(v)}</span></div>`).join('')}
       ${this.ready[i] ? '<div class="ready">READY</div>' : (this.single && i !== this.phase ? '<div class="device">waiting…</div>' : '<div class="device">choosing…</div>')}${dev}`;
   }
@@ -150,7 +162,9 @@ export class CharSelectScreen {
     const s1 = el('div', 'cs-side p1', this.side(0));
     const grid = el('div', 'cs-grid');
     CHAR_IDS.forEach((id, k) => {
-      const p = el('div', `portrait ${id}` + (this.cur[0] === k ? ' p1sel' : '') + (this.cur[1] === k ? ' p2sel' : ''), CHARACTERS[id].name);
+      const p = el('div', `portrait ${id}` + (this.cur[0] === k ? ' p1sel' : '') + (this.cur[1] === k ? ' p2sel' : '') + (CHARACTERS[id].portrait ? ' img' : ''), CHARACTERS[id].portrait ? '' : CHARACTERS[id].name);
+      p.setAttribute('style', portraitStyle(id));
+      p.title = `${CHARACTERS[id].fullName} — ${CHARACTERS[id].style}`;
       if (this.cur[0] === k) p.appendChild(el('span', 'cur c1', '1P'));
       if (this.cur[1] === k) p.appendChild(el('span', 'cur c2', this.single ? 'CPU' : '2P'));
       p.addEventListener('click', () => { const s = this.single ? this.phase : 0; if (!this.ready[s]) { this.cur[s] = k; this.confirm(s); } });
@@ -170,9 +184,13 @@ export class CharSelectScreen {
     let slot;
     if (this.single) slot = this.phase;
     else { slot = this.app.input.slotOf(e.device); if (slot < 0) slot = e.device === 'kb1' ? 0 : -1; if (slot < 0) return; }
-    if (e.action === 'left' || e.action === 'right') {
+    if (e.action === 'left' || e.action === 'right' || e.action === 'up' || e.action === 'down') {
       if (this.ready[slot]) return;
-      this.cur[slot] = (this.cur[slot] + (e.action === 'left' ? -1 : 1) + CHAR_IDS.length) % CHAR_IDS.length;
+      const n = CHAR_IDS.length;
+      const step = e.action === 'left' ? -1 : e.action === 'right' ? 1 : e.action === 'up' ? -GRID_COLS : GRID_COLS;
+      let next = this.cur[slot] + step;
+      if (Math.abs(step) === GRID_COLS) next = next < 0 ? Math.min(n - 1, next + GRID_COLS * 3) : next >= n ? next % GRID_COLS : next;
+      this.cur[slot] = ((next % n) + n) % n;
       this.app.audio.play('menuMove'); this.refresh();
     } else if (e.action === 'confirm') {
       if (!this.ready[slot]) this.confirm(slot);
@@ -353,7 +371,7 @@ export function moveListTable(charId) {
 const fmt = (n) => (n > 0 ? '+' + n : String(n));
 
 export class MoveListScreen {
-  constructor(app, charId = 'kai') { this.app = app; this.charId = charId; }
+  constructor(app, charId = 'ren') { this.app = app; this.charId = charId; }
   mount(root) {
     this.node = el('div', 'screen overlay');
     this.panel = el('div', 'panel');
@@ -397,6 +415,53 @@ export class ResultScreen {
   onInput(e) { this.menu.onInput(e); }
 }
 
+// ------------------------------------------------------------------ controls guide
+const firstKey = (input, dev, action) => {
+  const b = (input.bindings(dev)[action] || [])[0];
+  if (!b) return '—';
+  const d = describeBinding(b);
+  return { ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' }[d] || d;
+};
+
+// One-line summary of a device's bindings for the in-fight strip.
+export function controlsSummary(input, dev) {
+  if (!dev) return 'no device';
+  const k = (a) => `<kbd>${esc(firstKey(input, dev, a))}</kbd>`;
+  return `Move ${k('left')}${k('right')} · Sidestep ${k('up')}${k('down')} (tap) · Crouch hold ${k('down')} · ` +
+    `1 ${k('b1')} 2 ${k('b2')} 3 ${k('b3')} 4 ${k('b4')} · Throw/Break ${k('throw')} · Guard hold back or ${k('guard')} · Pause ${k('pause')}`;
+}
+
+export class ControlsScreen {
+  constructor(app) { this.app = app; }
+  mount(root) {
+    const inp = this.app.input;
+    const row = (label, action) => `<tr><td>${label}</td>${[inp.slots[0], inp.slots[1]].map((d) => `<td class="b">${d ? esc((inp.bindings(d)[action] || []).map(describeBinding).join(' / ')) : '—'}</td>`).join('')}</tr>`;
+    this.node = el('div', 'screen');
+    this.node.innerHTML = `<div class="panel controls-guide"><div class="title">Controls</div>
+      <table class="map"><tr><td></td><td class="b">P1: ${esc(inp.deviceName(inp.slots[0]))}</td><td class="b">P2: ${esc(inp.deviceName(inp.slots[1]))}</td></tr>
+      ${row('Move left / right', 'left')}${row('', 'right')}${row('Sidestep in (tap) / jump (hold)', 'up')}${row('Sidestep out (tap) / crouch (hold)', 'down')}
+      ${row('1 Left punch (signature jab)', 'b1')}${row('2 Right punch', 'b2')}${row('3 Left kick', 'b3')}${row('4 Right kick', 'b4')}
+      ${row('Throw / throw break (1+3)', 'throw')}${row('Guard', 'guard')}${row('Pause', 'pause')}${row('Training reset', 'reset')}</table>
+      <div class="guide-cols"><div>
+        <h4>Defence</h4>
+        <p><b>Standing guard</b> (blocks high + mid): stand still, hold <b>back</b>, or hold Guard.</p>
+        <p><b>Crouching guard</b> (blocks low, ducks high): hold <b>down-back</b> (or down).</p>
+        <p><b>Throws</b> (1+3 or Throw) miss crouching opponents. Break by pressing <b>1</b> / Throw as you are grabbed.</p>
+        <p><b>Sidestep</b>: tap up / down; linear attacks miss, tracking attacks still hit.</p>
+      </div><div>
+        <h4>Notation</h4>
+        <p>1 left punch · 2 right punch · 3 left kick · 4 right kick</p>
+        <p><b>F</b> toward the opponent · <b>B</b> away · <b>D</b> crouch (down). Hold the direction while pressing the button: <b>F+2</b>, <b>D+3</b>, <b>B+4</b>.</p>
+        <p>Directional attacks have priority over plain ones. Inputs pressed in the last frames of recovery are buffered.</p>
+        <p>Every fighter's moves (with startup and advantage) are in <b>Move List</b>.</p>
+      </div></div>
+      <div class="hint">Remap any input in Controllers → Remap. Back: [4] / Esc</div></div>`;
+    root.appendChild(this.node);
+  }
+  unmount() { this.node.remove(); }
+  onInput(e) { if (e.action === 'back' || e.action === 'confirm') { this.app.audio.play('menuBack'); this.app.ui.pop(); } }
+}
+
 // ------------------------------------------------------------------ HUD
 class HUD {
   constructor(app) {
@@ -417,6 +482,10 @@ class HUD {
     if (match.training) $('#movelist').innerHTML = '';
     this.ann.classList.remove('show');
     this.comboT = [0, 0];
+    const strip = $('#controls-strip');
+    const humans = match.mode === 'versus' ? [0, 1] : [0];
+    strip.innerHTML = humans.map((i) => `<div><b>P${i + 1}</b> ${controlsSummary(this.app.input, this.app.input.slots[i])}</div>`).join('');
+    strip.classList.toggle('hidden', !this.app.settings.controlsHint);
   }
   announce(text, big, small) {
     this.ann.textContent = text;

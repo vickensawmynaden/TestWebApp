@@ -9,9 +9,10 @@ import { FighterModel } from './FighterModel.js';
 import { Animator } from './Animator.js';
 import { CameraRig } from './CameraRig.js';
 import { Effects } from './Effects.js';
+import { APPEARANCES } from './appearance.js';
 
-const TRAIL_COLORS = { kai: 0x5aa8ff, viktor: 0xff6a3a };
-const AURA = { kai: [0.3, 0.6, 1.0], viktor: [1.0, 0.3, 0.2] };
+const TRAIL_COLORS = Object.fromEntries(Object.entries(APPEARANCES).map(([k, a]) => [k, a.trail]));
+const AURA = Object.fromEntries(Object.entries(APPEARANCES).map(([k, a]) => [k, a.aura]));
 
 export class GameView {
   constructor(canvas, quality = 'high') {
@@ -106,7 +107,7 @@ export class GameView {
       case 'ko': fx.flash(e.pos, 3, 0.35, 0xffffff); this.rig.shake(1); break;
       case 'rageArt': { const f = this.match.world.fighters[e.fighter]; fx.rage([f.pos.x, 1, f.pos.z], AURA[this.match.chars[e.fighter]]); break; }
       case 'swing':
-        if (e.move === 'vik_34') { this.pendingStomp = { fighter: e.fighter, at: 25 }; }
+        if (e.move === 'vik_d4') { this.pendingStomp = { fighter: e.fighter, at: 19 }; }
         break;
     }
   }
@@ -132,7 +133,7 @@ export class GameView {
       if (mv && mv.limb) m.limbWorld(mv.limb, this.tmpL); else this.tmpL.set(ps[i].x, 1, ps[i].z);
       this.effects.updateTrail(i, trailOn, this.tmpL, this.camera, TRAIL_COLORS[match.chars[i]]);
       if (f.rage) this.effects.aura([ps[i].x, ps[i].y, ps[i].z], AURA[match.chars[i]]);
-      if (this.pendingStomp && this.pendingStomp.fighter === i && f.state === 'attack' && f.move.id === 'vik_34' && f.mf >= this.pendingStomp.at) {
+      if (this.pendingStomp && this.pendingStomp.fighter === i && f.state === 'attack' && f.move.id === 'vik_d4' && f.mf >= this.pendingStomp.at) {
         this.effects.shockwave([ps[i].x + f.face.x * 0.4, 0, ps[i].z + f.face.z * 0.4]);
         this.rig.shake(0.5);
         this.pendingStomp = null;

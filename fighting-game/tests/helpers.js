@@ -1,7 +1,7 @@
 import { World, emptyInput } from '../js/sim/world.js';
 import { CHARACTERS } from '../js/sim/characters.js';
 
-export function makeWorld(a = 'kai', b = 'viktor', dist = null) {
+export function makeWorld(a = 'ren', b = 'maya', dist = null) {
   const w = new World(CHARACTERS[a], CHARACTERS[b]);
   if (dist !== null) setDistance(w, dist);
   return w;

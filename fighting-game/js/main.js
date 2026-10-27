@@ -4,12 +4,12 @@ import { InputManager } from './input/InputManager.js';
 import { AudioEngine } from './audio/Audio.js';
 import { Match } from './sim/match.js';
 import { DUMMY_MODES } from './sim/ai.js';
-import { UI, MenuScreen, TitleScreen, CharSelectScreen, ControllerScreen, MoveListScreen, ResultScreen, moveListTable } from './ui/UI.js';
+import { UI, MenuScreen, TitleScreen, CharSelectScreen, ControllerScreen, ControlsScreen, MoveListScreen, ResultScreen, moveListTable } from './ui/UI.js';
 
 const STEP = 1 / 60;
 
 function loadSettings() {
-  const d = { roundsToWin: 2, roundTime: 60, cpuLevel: 2, quality: 'high' };
+  const d = { roundsToWin: 2, roundTime: 60, cpuLevel: 2, quality: 'high', controlsHint: true };
   try { return { ...d, ...JSON.parse(localStorage.getItem('ifa.settings') || '{}') }; } catch { return d; }
 }
 
@@ -34,7 +34,7 @@ class App {
       const { GameView } = await import('./render/GameView.js');
       this.view = new GameView(document.getElementById('game'), this.settings.quality);
       // A background match for the menu scenery
-      this.menuMatch = new Match({ p1: 'kai', p2: 'viktor', mode: 'versus', skipIntro: true, roundTime: 0 });
+      this.menuMatch = new Match({ p1: 'ren', p2: 'maya', mode: 'versus', skipIntro: true, roundTime: 0 });
       this.menuMatch.world.frozen = false;
       this.view.setMatch(this.menuMatch);
     } catch (err) {
@@ -57,9 +57,10 @@ class App {
       { label: 'Versus (2 Players)', action: () => this.toCharSelect('versus') },
       { label: 'Versus CPU', action: () => this.toCharSelect('cpu') },
       { label: 'Training', action: () => this.toCharSelect('training') },
+      { label: 'Controls Guide', action: () => this.ui.push(new ControlsScreen(this)) },
       { label: 'Controllers', action: () => this.ui.push(new ControllerScreen(this)) },
       { label: 'Settings', action: () => this.showSettings() },
-      { label: 'Move List', action: () => this.ui.push(new MoveListScreen(this, 'kai')) },
+      { label: 'Move List', action: () => this.ui.push(new MoveListScreen(this, 'ren')) },
     ], hint: this.controllerHint() }));
   }
 
@@ -76,6 +77,7 @@ class App {
       { label: 'Rounds to win', value: () => String(s.roundsToWin), adjust: (d) => { s.roundsToWin = cyc([1, 2, 3], s.roundsToWin, d); this.saveSettings(); } },
       { label: 'Round time', value: () => (s.roundTime ? s.roundTime + ' s' : '∞'), adjust: (d) => { s.roundTime = cyc([30, 60, 99, 0], s.roundTime, d); this.saveSettings(); } },
       { label: 'CPU difficulty', value: () => ['', 'Easy', 'Normal', 'Hard'][s.cpuLevel], adjust: (d) => { s.cpuLevel = cyc([1, 2, 3], s.cpuLevel, d); this.saveSettings(); } },
+      { label: 'Controls strip in fights', value: () => (s.controlsHint ? 'ON' : 'OFF'), adjust: () => { s.controlsHint = !s.controlsHint; this.saveSettings(); document.getElementById('controls-strip').classList.toggle('hidden', !s.controlsHint || !this.match); } },
       { label: 'Graphics', value: () => s.quality, adjust: (d) => { s.quality = cyc(['low', 'medium', 'high'], s.quality, d); this.view.setQuality(s.quality); this.saveSettings(); } },
       vol('master'), vol('sfx'), vol('music'), vol('voice'),
       { label: 'Back', action: () => this.ui.pop() },
@@ -129,6 +131,7 @@ class App {
       { label: 'Reset positions', hidden: () => !m.training, action: () => { m.resetTraining(); this.resume(); } },
       { label: 'Restart match', hidden: () => m.training, action: () => this.rematch() },
       { label: 'Move List', action: () => this.ui.push(new MoveListScreen(this, m.chars[0])) },
+      { label: 'Controls Guide', action: () => this.ui.push(new ControlsScreen(this)) },
       { label: 'Controllers', action: () => this.ui.push(new ControllerScreen(this)) },
       { label: 'Settings', action: () => this.showSettings() },
       { label: 'Character Select', action: () => this.toCharSelect(m.mode) },

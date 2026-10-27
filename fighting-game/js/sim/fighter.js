@@ -2,6 +2,22 @@
 // the frame-by-frame rules live in world.js so both fighters can be resolved together.
 import { parseCommand, commandPriority } from './commands.js';
 import { INPUT_BUFFER, B1, B2, B3, B4 } from './constants.js';
+import { ATTACKS } from '../render/poses.js';
+
+const LEVEL_HEIGHT = { high: 1.45, mid: 1.15, low: 0.25 };
+
+// Where a move's hitbox sits at full extension, as [right, up, forward] in the fighter's model
+// space. It is taken from the striking limb's IK target in the attack's contact pose, so the
+// hitbox follows the fist / foot the animation actually extends (shared rig data in poses.js).
+export function limbHitPoint(m, scale = 1) {
+  let p = m.hitPoint;
+  if (!p) {
+    const pose = ATTACKS[m.anim]?.hit;
+    const endEffector = ['lHand', 'rHand', 'lFoot', 'rFoot'].includes(m.limb);
+    p = endEffector && pose && pose[m.limb] ? pose[m.limb] : [0, LEVEL_HEIGHT[m.level] || 1.15, m.reach || 0.6];
+  }
+  return [p[0] * scale, p[1] * scale, p[2] * scale];
+}
 
 const NEUTRAL_STATES = new Set(['idle', 'walkF', 'walkB', 'crouch', 'run']);
 
@@ -14,6 +30,11 @@ export class Fighter {
     for (const m of def.moves) {
       const move = { ...m, spec: parseCommand(m.cmd) };
       move.total = move.startup + (move.active || 1) + move.recovery - 1;
+      // Explicit hit / block stun (counted from the first active frame) -> frame advantage.
+      const afterFirstActive = (move.active || 1) - 1 + move.recovery;
+      if (move.hitstun !== undefined) move.hit = move.onHit ? 0 : move.hitstun - afterFirstActive;
+      if (move.blockstun !== undefined) move.block = move.blockstun - afterFirstActive;
+      if (move.level !== 'throw' && move.level !== 'parry') move.hitPointLocal = limbHitPoint(move, def.scale || 1);
       move.stringSpecs = (move.strings || []).map(s => ({ ...s, spec: parseCommand(s.cmd) }));
       this.moveMap.set(move.id, move);
       if (!move.inString) this.commandMoves.push(move);
@@ -69,6 +90,7 @@ export class Fighter {
     this.frameCount = 0;
     this.lastMoveInfo = null;        // for training mode frame data
     this.winPose = 0;
+    this.throwProtect = 0;           // frames after get-up during which throws cannot connect
   }
 
   get dir() { return this.buf.length ? this.buf[this.buf.length - 1].dir : 5; }

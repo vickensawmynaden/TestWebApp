@@ -5,7 +5,7 @@ import { CpuAI, TrainingDummy } from './ai.js';
 import { FPS, DEFAULT_RULES } from './constants.js';
 
 export class Match {
-  constructor({ p1 = 'kai', p2 = 'viktor', mode = 'versus', roundsToWin = DEFAULT_RULES.roundsToWin,
+  constructor({ p1 = 'ren', p2 = 'maya', mode = 'versus', roundsToWin = DEFAULT_RULES.roundsToWin,
     roundTime = DEFAULT_RULES.roundTime, cpuLevel = 2, skipIntro = false } = {}) {
     this.mode = mode;
     this.chars = [p1, p2];

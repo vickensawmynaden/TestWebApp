@@ -96,6 +96,7 @@ export class World {
     f.t++;
     f.frameCount++;
     if (f.invuln > 0) f.invuln--;
+    if (f.throwProtect > 0) f.throwProtect--;
     switch (f.state) {
       case 'idle': case 'walkF': case 'walkB': case 'crouch': case 'run':
         this.neutral(f); break;
@@ -141,7 +142,8 @@ export class World {
         break;
       case 'down': this.downStep(f); break;
       case 'getup':
-        if (f.t >= 22) { this.endCombo(f); this.toNeutral(f); }
+        // A short throw-proof window after rising prevents guaranteed repeat throws.
+        if (f.t >= 22) { this.endCombo(f); f.throwProtect = 16; this.toNeutral(f); }
         break;
       case 'throwing': case 'thrown': this.throwStep(f); break;
       case 'throwBreak':
@@ -257,6 +259,11 @@ export class World {
       const b = this.findMove(f, f.commandMoves);
       if (b) f.buffered = b;
     }
+    // Sideways step during startup (Sora's Axis Heel); ordinary collision still applies.
+    if (m.sideStep && f.mf >= m.sideStep.from && f.mf <= m.sideStep.to) {
+      const per = m.sideStep.dist / (m.sideStep.to - m.sideStep.from + 1);
+      f.pos.x += -f.face.z * per; f.pos.z += f.face.x * per;
+    }
     // Advance (lunging moves).
     if (m.advance && f.mf < m.startup + m.active) {
       const per = m.advance / (m.startup + m.active - 1);
@@ -351,7 +358,7 @@ export class World {
       if (!act || f.moveHit) continue;
       if (!this.throwReaches(f, o)) continue;
       const p = o.posture();
-      if (p !== 'stand' || o.invuln > 0 || ['thrown', 'throwing', 'down', 'getup', 'air', 'wall', 'crumple', 'ko'].includes(o.state)) continue;
+      if (p !== 'stand' || o.invuln > 0 || o.throwProtect > 0 || o.ko || ['thrown', 'throwing', 'down', 'getup', 'air', 'wall', 'crumple', 'ko'].includes(o.state)) continue;
       f.moveHit = true; f.moveResult = 'hit';
       const m = f.move;
       f.state = 'throwing'; f.t = 0;
@@ -389,8 +396,7 @@ export class World {
     return HURT_STAND;
   }
 
-  hitboxRange(f) {
-    const m = f.move;
+  hitboxRange(f, m = f.move) {
     const base = m.level === 'high' ? HB_HIGH : m.level === 'low' ? HB_LOW : HB_MID;
     const y = f.pos.y;
     return y > 0 ? [base[0] + y * 0.5, base[1] + y] : base;
@@ -406,9 +412,14 @@ export class World {
     const [hl, hh] = this.hitboxRange(a);
     const [dl, dh] = this.hurtRange(d);
     if (hh < dl || hl > dh) return false;
-    // Hitbox swept from the attacker's body to the reach point along the locked facing.
+    // Crouching ducks high attacks.
+    if (m.level === 'high' && d.posture() === 'crouch') return false;
+    // Hitbox: swept from the attacker's body to the striking limb's extended position
+    // (limb IK target of the contact pose), along the facing locked when the attack began.
+    const [hr, , hf] = m.hitPointLocal;
+    const rx = -a.face.z, rz = a.face.x;   // fighter's right on the ground plane
     const sx = a.pos.x + a.face.x * 0.2, sz = a.pos.z + a.face.z * 0.2;
-    const ex = a.pos.x + a.face.x * m.reach, ez = a.pos.z + a.face.z * m.reach;
+    const ex = a.pos.x + a.face.x * hf + rx * hr, ez = a.pos.z + a.face.z * hf + rz * hr;
     const dist = pointSegDist(d.pos.x, d.pos.z, sx, sz, ex, ez);
     const r = (m.radius || 0.2) + (d.state === 'down' ? 0.45 : HURT_RADIUS);
     return dist <= r;
@@ -419,8 +430,10 @@ export class World {
     const ab = this.strikeConnects(a, b), ba = this.strikeConnects(b, a);
     // Evaluate counter-hit state before either hit modifies the other fighter (allows trades).
     const chB = ab && this.isCounterState(b), chA = ba && this.isCounterState(a);
-    if (ab) this.applyStrike(a, b, chB);
-    if (ba) this.applyStrike(b, a, chA);
+    // Snapshot both attacks first: on a trade the first hit resets the other fighter's state.
+    const snapA = { move: a.move, mf: a.mf }, snapB = { move: b.move, mf: b.mf };
+    if (ab) this.applyStrike(a, b, chB, snapA);
+    if (ba) this.applyStrike(b, a, chA, snapB);
   }
 
   isCounterState(d) {
@@ -443,11 +456,11 @@ export class World {
     return dmg;
   }
 
-  applyStrike(a, d, counter) {
-    const m = a.move;
+  applyStrike(a, d, counter, snap = { move: a.move, mf: a.mf }) {
+    const m = snap.move;
     a.moveHit = true;
-    const remaining = m.total - a.mf;
-    const hitPos = this.contactPoint(a, d);
+    const remaining = m.total - snap.mf;
+    const hitPos = this.contactPoint(a, d, m);
     // ---- Parry (Kai's Flow Parry)
     if (d.state === 'attack' && d.move.parry && d.mf >= d.move.parry[0] && d.mf <= d.move.parry[1] && (m.level === 'high' || m.level === 'mid') && !m.rage) {
       a.moveResult = 'parried';
@@ -494,6 +507,9 @@ export class World {
     if (n > 0) scale = Math.max(0.3, 1 - 0.1 * n);
     if (airborneVictim || d.combo.juggle > 0) scale *= 0.85;
     if (d.state === 'wall') scale *= 0.8;
+    // Startup bonus (Leila's Check Hook): extra damage when it interrupts an attack's startup.
+    const startupCatch = !!m.startupBonus && d.state === 'attack' && d.move && d.mf < d.move.startup;
+    if (startupCatch) scale *= 1 + m.startupBonus;
     const dmg = this.applyDamage(a, d, m.dmg, scale);
     const reaction = (counter && m.onCH) || m.onHit || null;
     const heavy = m.sfx === 'heavy' || counter || !!reaction;
@@ -551,7 +567,7 @@ export class World {
       d.stun = stun;
       d.pushV = (0.05 + (m.push || 0) * 0.04) / d.def.weight;
     }
-    this.emit(counter ? 'counter' : 'hit', { attacker: a.index, defender: d.index, pos: hitPos, heavy, dmg, sfx: m.sfx, level: lvl, combo: d.combo.hits, reaction });
+    this.emit(counter ? 'counter' : 'hit', { attacker: a.index, defender: d.index, pos: hitPos, heavy, dmg, sfx: m.sfx, level: lvl, combo: d.combo.hits, reaction, move: m.id, startupCatch });
     if (heavy) this.emit('shake', { amount: m.rage ? 1.2 : counter ? 0.6 : 0.4 });
     if (d.hp <= 0) this.doKO(d, a);
   }
@@ -590,12 +606,11 @@ export class World {
     return best;
   }
 
-  contactPoint(a, d) {
-    const m = a.move;
-    const [hl, hh] = this.hitboxRange(a);
+  contactPoint(a, d, m = a.move) {
+    const [hl, hh] = this.hitboxRange(a, m);
     const [dl, dh] = this.hurtRange(d);
     const y = (Math.max(hl, dl) + Math.min(hh, dh)) / 2;
-    const reach = Math.min(m.reach, Math.hypot(d.pos.x - a.pos.x, d.pos.z - a.pos.z) - 0.18);
+    const reach = Math.min(m.hitPointLocal ? m.hitPointLocal[2] : m.reach, Math.hypot(d.pos.x - a.pos.x, d.pos.z - a.pos.z) - 0.18);
     return [a.pos.x + a.face.x * reach, y, a.pos.z + a.face.z * reach];
   }
 
