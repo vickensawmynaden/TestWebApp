@@ -6,6 +6,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Stage, buildEnvScene } from './Stage.js';
 import { FighterModel } from './FighterModel.js';
+import { SkinnedFighter, hasSkinned } from './SkinnedFighter.js';
 import { Animator } from './Animator.js';
 import { CameraRig } from './CameraRig.js';
 import { Effects } from './Effects.js';
@@ -70,7 +71,8 @@ export class GameView {
     this.models = []; this.animators = [];
     match.chars.forEach((c, i) => {
       const def = match.world.fighters[i].def;
-      const m = new FighterModel(c, def);
+      // Rigged glTF character when available; the procedural model is the fallback (and Kai's body).
+      const m = hasSkinned(c) ? new SkinnedFighter(c, def) : new FighterModel(c, def);
       this.scene.add(m.root);
       this.models.push(m);
       this.animators.push(new Animator(c));

@@ -4,10 +4,21 @@ A browser-based 3D fighting game with close-range, Tekken-style combat: four att
 standing and crouching guard, sidesteps and distinct fighting styles. All characters, stage,
 animation, audio and branding are original. There are no ripped or third-party game assets.
 
-- **Six playable fighters from the roster concept sheet**
-  (`public/references/fighter-roster.png`): Ren Arashi (Karate), Maya Baptiste (Kickboxing),
-  Viktor Orlov (Grappling), Leila Haddad (Boxing), Caio Luz (Capoeira) and Sora Kestrel
-  (Precision Combat). Kai, from the first version of the game, remains as a bonus fighter.
+- **Six playable fighters with rigged, skinned 3D character models** (supplied GLB models,
+  auto-rigged by `tools/charbuild/rig.py`). Each model fills one existing roster slot, and that
+  fighter's moves, frame data and personality are unchanged:
+
+  | Fighter (style) | Model |
+  |---|---|
+  | Ren Arashi (Karate) | Mushroom Ninja |
+  | Maya Baptiste (Kickboxing) | Mushroom Warrior (blade) |
+  | Viktor Orlov (Grappling) | Fantasy Bear |
+  | Leila Haddad (Boxing) | Leather Warrior |
+  | Caio Luz (Capoeira) | Armored Cobra |
+  | Sora Kestrel (Precision Combat) | Tactical Soldier |
+
+  Kai, from the first version of the game, remains as a bonus fighter on the procedural body.
+  See `assets/manifest.json` for files, provenance and status.
 - **Local versus for two players** on two physical gamepads (BeTop, XInput or DirectInput pads),
   with keyboard fallback, plus **player-versus-CPU** with a personality per fighter.
 - **True 3D combat**: sidesteps around the opponent, attack direction locked at startup (so
@@ -43,6 +54,21 @@ Then open **http://localhost:8080** in the browser.
 > Opening `index.html` directly from disk (`file://`) will **not** work, because ES modules and
 > import maps require HTTP. Any static server is fine, for example `python3 -m http.server 8080`
 > run inside `fighting-game/`.
+
+The game loads the six character GLBs (~11 MB in total) behind a "Loading fighters" screen.
+`http://localhost:8080/?models=procedural` skips them and uses the prototype bodies.
+
+### Rebuilding the character rigs
+
+```bash
+pip install numpy scipy pillow
+python3 tools/charbuild/rig.py            # all six; or e.g. rig.py maya
+```
+
+Input is `assets/source/*.glb` (the supplied static models). Joint positions per model live in
+`tools/charbuild/rigdefs.py`. To check joints, weights and poses, open
+`http://localhost:8080/tools/gallery.html?pose=crossR.hit&yaw=70` (add `&weights=1` for a
+skin-weight view, or `?portraits=1` to re-render `assets/portraits/roster.jpg`).
 
 ### Deploying to Vercel
 
@@ -80,7 +106,10 @@ fighting-game/
 │   ├── render/
 │   │   ├── GameView.js     Renderer, bloom post-processing, PMREM reflections, wiring
 │   │   ├── appearance.js   Per-fighter look: proportions, skin, hair, clothing, accessories
-│   │   ├── FighterModel.js Builds the procedural prototype body from appearance.js on the IK rig
+│   │   ├── SkinnedFighter.js  Rigged glTF fighter: loads assets/characters/<id>.glb, per-instance
+│   │   │                   skeleton clone, retargets the poses (IK on the model's bone lengths),
+│   │   │                   planted-foot locking, weapon wrist aim, tail follow-through
+│   │   ├── FighterModel.js Procedural prototype body (Kai, and fallback if a GLB fails to load)
 │   │   ├── Animator.js     State → pose: keyframed attacks synced to frame data, locomotion,
 │   │   │                   hit reactions, juggles, throws, crossfades
 │   │   ├── poses.js        Shared rig pose data: stances, reactions, 51 attack animations, win/intro
@@ -91,9 +120,17 @@ fighting-game/
 │   ├── audio/Audio.js      Web Audio synthesised SFX, grunts, music; speech announcer
 │   └── ui/UI.js            Title, menus, character select, controllers, remap, move list,
 │                           results, HUD
-├── public/references/      fighter-roster.png (concept sheet; also used for select portraits)
-├── tests/                  Node tests (combat.test.js, roster.test.js) and Playwright e2e (e2e/)
-├── tools/serve.js          Zero-dependency static server
+├── assets/
+│   ├── characters/         Rigged fighter GLBs (game files) + rig-report.json
+│   ├── source/             The supplied unrigged GLBs (pipeline input; not deployed)
+│   ├── portraits/roster.jpg  Select-screen portraits rendered from the rigged models
+│   └── manifest.json       Files, mesh/skeleton/texture data, provenance, rights, status
+├── public/references/      fighter-roster.png (original concept sheet)
+├── tests/                  Node tests (combat, roster, assets) and Playwright e2e (e2e/)
+├── tools/
+│   ├── serve.js            Zero-dependency static server
+│   ├── gallery.html        Pose gallery / weight view / portrait renderer (dev tool)
+│   └── charbuild/          rig.py (auto-rigger), rigdefs.py (joint tables), glb.py (writer)
 └── vendor/three/           Three.js r170 + the post-processing add-ons used
 ```
 
@@ -337,16 +374,18 @@ A deterministic test checks these tendencies. Win rates between fighters are not
 **Still needing work / not implemented:**
 - **Online multiplayer is not implemented.** There is no server or netcode. The deterministic sim
   is designed so rollback netcode could be added later, but nothing online exists today.
-- **The six fighters are procedural PROTOTYPE models.** The reference image is 2D concept art
-  with no mesh, skeleton or animation clips, and the project has no rigged GLB/glTF assets. So
-  each fighter is built from lathe and sphere primitives on a shared IK rig. They match the
-  reference's silhouette, colours, hair and outfits closely enough to tell apart, but faces,
-  hands, cloth folds and hair are simplified, and there is no skin deformation at the joints
-  (joint spheres hide the seams). Appearance (`render/appearance.js`, `render/FighterModel.js`)
-  is separate from combat data (`sim/characters.js`). A detailed rigged model can replace
-  `FighterModel` for any fighter, loaded with `GLTFLoader` and an `AnimationMixer`, while the
-  combat data stays unchanged.
-- Animations are hand-keyed procedural poses, not motion capture.
+- **The character models are stylised (mushrooms, bear, cobra, chibi), not the realistic
+  humans of the concept sheet.** They are the models supplied for the roster, so fighter names
+  and moves were kept while the bodies changed. Renaming the fighters is a data-only change in
+  `js/sim/characters.js`.
+- **Reach differs from the visuals for small-limbed models.** Hitboxes are unchanged sim data
+  (authored for ~0.55 m arms / ~0.88 m legs). Model limbs are shorter (Ren's chibi body: 0.34 m
+  arms, 0.30 m legs), so Ren's and Viktor's strikes connect a little beyond their visible fist or
+  foot. Fixing this means per-fighter reach rebalancing (a balance change), which was not done.
+- No finger bones (the source meshes are single sculpts); hands keep their modelled grip.
+  Weapons in the source meshes (Maya's blade, Ren's sword) are kept and ride the hand.
+- Animations are hand-keyed procedural poses retargeted to each skeleton, not motion capture
+  or authored clips. The models came without any animation.
 - Audio is synthesised placeholder audio. The announcer uses the browser's speech synthesis,
   which varies by OS. Recorded SFX, voice and music should replace it.
 - One stage. There is no breakable floor or wall, story, ranked mode, replays or

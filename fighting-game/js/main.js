@@ -33,6 +33,15 @@ class App {
     try {
       const { GameView } = await import('./render/GameView.js');
       this.view = new GameView(document.getElementById('game'), this.settings.quality);
+      // Rigged character models (assets/characters/*.glb). Missing files fall back to procedural bodies.
+      // ?models=procedural keeps the prototype bodies (comparison / very low-end devices).
+      if (new URLSearchParams(location.search).get('models') !== 'procedural') {
+        const { preloadCharacters } = await import('./render/SkinnedFighter.js');
+        const screens = document.getElementById('screens');
+        screens.innerHTML = '<div class="screen"><div class="panel"><div class="title">Loading fighters</div><div class="hint" id="load-progress">0 / 6</div></div></div>';
+        await preloadCharacters(undefined, (n, total) => { const el = document.getElementById('load-progress'); if (el) el.textContent = `${n} / ${total}`; });
+        screens.innerHTML = '';
+      }
       // A background match for the menu scenery
       this.menuMatch = new Match({ p1: 'ren', p2: 'maya', mode: 'versus', skipIntro: true, roundTime: 0 });
       this.menuMatch.world.frozen = false;

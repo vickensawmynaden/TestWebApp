@@ -174,7 +174,7 @@ const SORA_MOVES = [
 const KAI_DMG_SCALE = 100 / 170;
 const KAI_SCALED = KAI_MOVES.map((m) => ({ ...m, dmg: m.level === 'throw' ? STANDARD_THROW_DMG : Math.max(1, Math.round(m.dmg * KAI_DMG_SCALE)) }));
 
-const ROSTER_IMAGE = 'public/references/fighter-roster.png';
+const ROSTER_IMAGE = 'assets/portraits/roster.jpg'; // rendered from the rigged models (tools/gallery.html?portraits=1)
 
 export const CHARACTERS = {
   ren: {

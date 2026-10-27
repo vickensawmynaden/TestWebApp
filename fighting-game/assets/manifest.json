@@ -1,0 +1,438 @@
+{
+ "generated": "2026-10-27",
+ "characters": [
+  {
+   "fighter": "ren",
+   "model": "Mushroom Ninja",
+   "file": "assets/characters/ren.glb",
+   "bytes": 1624604,
+   "sha256": "1a99a31a237c0c767a61f0c95ca6b7438303943c33cf39e6409e29b119fe4796",
+   "mesh": {
+    "vertices": 23099,
+    "triangles": 39198
+   },
+   "skeleton": {
+    "bones": 21,
+    "names": [
+     "hips",
+     "spine",
+     "chest",
+     "neck",
+     "head",
+     "clavicle_L",
+     "upperarm_L",
+     "forearm_L",
+     "hand_L",
+     "thigh_L",
+     "shin_L",
+     "foot_L",
+     "toe_L",
+     "clavicle_R",
+     "upperarm_R",
+     "forearm_R",
+     "hand_R",
+     "thigh_R",
+     "shin_R",
+     "foot_R",
+     "toe_R"
+    ],
+    "tail": false,
+    "weapon": {
+     "hand": "hand_R",
+     "dir": [
+      -0.5264758605776377,
+      0.8172483765744878,
+      0.23436778621517043
+     ],
+     "aim": [
+      -0.1,
+      0.75,
+      0.65
+     ]
+    }
+   },
+   "textures": [
+    {
+     "slot": "baseColor",
+     "format": "JPEG",
+     "size": "2048x2048",
+     "embedded": true
+    }
+   ],
+   "material": {
+    "metallic": 0.0,
+    "roughness": 0.7,
+    "note": "PBR factors replace the export defaults"
+   },
+   "animationClips": [],
+   "animation": "No baked clips. Bones are driven every frame by the sim-synced pose system (js/render/Animator.js + poses.js) through js/render/SkinnedFighter.js (IK, foot locking).",
+   "source": {
+    "file": "assets/source/mushroom_ninja.glb",
+    "bytes": 5625464,
+    "sha256": "8c27093296db8c59152ad4895bf83aa66720d90f67df798d4dd2f22ccd037d58",
+    "provenance": "Uploaded by the project owner in the Claude Code session on 2026-10-27. Exported by trimesh (glTF generator string); static textured mesh, no rig or animation.",
+    "rights": "Supplied by the project owner for use in this game. Licence/terms of the tool that generated it were not provided - confirm before public or commercial distribution."
+   },
+   "processing": "tools/charbuild/rig.py: joint placement (tools/charbuild/rigdefs.py), volumetric-geodesic skin weights, rescale to in-game height, JPEG texture re-encode.",
+   "status": "complete: rigged, weighted and in game"
+  },
+  {
+   "fighter": "maya",
+   "model": "Mushroom Warrior",
+   "file": "assets/characters/maya.glb",
+   "bytes": 2065072,
+   "sha256": "92a7e53c09322e8608953ab5f725963bceec6dc309f318e6071f5d21bcbf7534",
+   "mesh": {
+    "vertices": 29928,
+    "triangles": 39114
+   },
+   "skeleton": {
+    "bones": 21,
+    "names": [
+     "hips",
+     "spine",
+     "chest",
+     "neck",
+     "head",
+     "clavicle_L",
+     "upperarm_L",
+     "forearm_L",
+     "hand_L",
+     "thigh_L",
+     "shin_L",
+     "foot_L",
+     "toe_L",
+     "clavicle_R",
+     "upperarm_R",
+     "forearm_R",
+     "hand_R",
+     "thigh_R",
+     "shin_R",
+     "foot_R",
+     "toe_R"
+    ],
+    "tail": false,
+    "weapon": {
+     "hand": "hand_L",
+     "dir": [
+      0.5200689402852477,
+      -0.7211622638622103,
+      0.457660667451018
+     ],
+     "aim": [
+      0.15,
+      -0.45,
+      1.0
+     ]
+    }
+   },
+   "textures": [
+    {
+     "slot": "baseColor",
+     "format": "JPEG",
+     "size": "2048x2048",
+     "embedded": true
+    }
+   ],
+   "material": {
+    "metallic": 0.05,
+    "roughness": 0.75,
+    "note": "PBR factors replace the export defaults"
+   },
+   "animationClips": [],
+   "animation": "No baked clips. Bones are driven every frame by the sim-synced pose system (js/render/Animator.js + poses.js) through js/render/SkinnedFighter.js (IK, foot locking).",
+   "source": {
+    "file": "assets/source/mushroom_warrior.glb",
+    "bytes": 6940328,
+    "sha256": "8d7e342b9b84b6aea1bc3b9580d5119c95d5fb8248ad344db3d870b84786ff95",
+    "provenance": "Uploaded by the project owner in the Claude Code session on 2026-10-27. Exported by trimesh (glTF generator string); static textured mesh, no rig or animation.",
+    "rights": "Supplied by the project owner for use in this game. Licence/terms of the tool that generated it were not provided - confirm before public or commercial distribution."
+   },
+   "processing": "tools/charbuild/rig.py: joint placement (tools/charbuild/rigdefs.py), volumetric-geodesic skin weights, rescale to in-game height, JPEG texture re-encode.",
+   "status": "complete: rigged, weighted and in game"
+  },
+  {
+   "fighter": "viktor",
+   "model": "Fantasy Bear",
+   "file": "assets/characters/viktor.glb",
+   "bytes": 1855264,
+   "sha256": "c4b8c2b8a06654a42fd1e788570558241aa46973ee692e25413c740b3dd7d7b4",
+   "mesh": {
+    "vertices": 26439,
+    "triangles": 39200
+   },
+   "skeleton": {
+    "bones": 24,
+    "names": [
+     "hips",
+     "spine",
+     "chest",
+     "neck",
+     "head",
+     "clavicle_L",
+     "upperarm_L",
+     "forearm_L",
+     "hand_L",
+     "thigh_L",
+     "shin_L",
+     "foot_L",
+     "toe_L",
+     "clavicle_R",
+     "upperarm_R",
+     "forearm_R",
+     "hand_R",
+     "thigh_R",
+     "shin_R",
+     "foot_R",
+     "toe_R",
+     "tail1",
+     "tail2",
+     "tail3"
+    ],
+    "tail": true,
+    "weapon": null
+   },
+   "textures": [
+    {
+     "slot": "baseColor",
+     "format": "JPEG",
+     "size": "2048x2048",
+     "embedded": true
+    }
+   ],
+   "material": {
+    "metallic": 0.2,
+    "roughness": 0.6,
+    "note": "PBR factors replace the export defaults"
+   },
+   "animationClips": [],
+   "animation": "No baked clips. Bones are driven every frame by the sim-synced pose system (js/render/Animator.js + poses.js) through js/render/SkinnedFighter.js (IK, foot locking).",
+   "source": {
+    "file": "assets/source/fantasy_bear.glb",
+    "bytes": 6252744,
+    "sha256": "e9e79fbef37f055dd9194fa180abf525ebdf7705fcf1166a6a640de93be559da",
+    "provenance": "Uploaded by the project owner in the Claude Code session on 2026-10-27. Exported by trimesh (glTF generator string); static textured mesh, no rig or animation.",
+    "rights": "Supplied by the project owner for use in this game. Licence/terms of the tool that generated it were not provided - confirm before public or commercial distribution."
+   },
+   "processing": "tools/charbuild/rig.py: joint placement (tools/charbuild/rigdefs.py), volumetric-geodesic skin weights, rescale to in-game height, JPEG texture re-encode.",
+   "status": "complete: rigged, weighted and in game"
+  },
+  {
+   "fighter": "leila",
+   "model": "Leather Warrior",
+   "file": "assets/characters/leila.glb",
+   "bytes": 1819064,
+   "sha256": "2e696cb402ffda29b54707c01d2bd7b07ac0f6890b2eed041d494c1422dc2cfb",
+   "mesh": {
+    "vertices": 25776,
+    "triangles": 39188
+   },
+   "skeleton": {
+    "bones": 21,
+    "names": [
+     "hips",
+     "spine",
+     "chest",
+     "neck",
+     "head",
+     "clavicle_L",
+     "upperarm_L",
+     "forearm_L",
+     "hand_L",
+     "thigh_L",
+     "shin_L",
+     "foot_L",
+     "toe_L",
+     "clavicle_R",
+     "upperarm_R",
+     "forearm_R",
+     "hand_R",
+     "thigh_R",
+     "shin_R",
+     "foot_R",
+     "toe_R"
+    ],
+    "tail": false,
+    "weapon": null
+   },
+   "textures": [
+    {
+     "slot": "baseColor",
+     "format": "JPEG",
+     "size": "2048x2048",
+     "embedded": true
+    }
+   ],
+   "material": {
+    "metallic": 0.35,
+    "roughness": 0.55,
+    "note": "PBR factors replace the export defaults"
+   },
+   "animationClips": [],
+   "animation": "No baked clips. Bones are driven every frame by the sim-synced pose system (js/render/Animator.js + poses.js) through js/render/SkinnedFighter.js (IK, foot locking).",
+   "source": {
+    "file": "assets/source/warrior.glb",
+    "bytes": 5145324,
+    "sha256": "7f1608302502f57ca0107be897ee08bdf3bd62f59daee7568f9b60e6de0a4534",
+    "provenance": "Uploaded by the project owner in the Claude Code session on 2026-10-27. Exported by trimesh (glTF generator string); static textured mesh, no rig or animation.",
+    "rights": "Supplied by the project owner for use in this game. Licence/terms of the tool that generated it were not provided - confirm before public or commercial distribution."
+   },
+   "processing": "tools/charbuild/rig.py: joint placement (tools/charbuild/rigdefs.py), volumetric-geodesic skin weights, rescale to in-game height, JPEG texture re-encode.",
+   "status": "complete: rigged, weighted and in game"
+  },
+  {
+   "fighter": "caio",
+   "model": "Armored Cobra",
+   "file": "assets/characters/caio.glb",
+   "bytes": 1955888,
+   "sha256": "5c5f7718fd19afe9dc6273fd3f5c9650cc40ba5838da7d18b595e3e59865704e",
+   "mesh": {
+    "vertices": 27227,
+    "triangles": 39160
+   },
+   "skeleton": {
+    "bones": 26,
+    "names": [
+     "hips",
+     "spine",
+     "chest",
+     "neck",
+     "head",
+     "clavicle_L",
+     "upperarm_L",
+     "forearm_L",
+     "hand_L",
+     "thigh_L",
+     "shin_L",
+     "foot_L",
+     "toe_L",
+     "clavicle_R",
+     "upperarm_R",
+     "forearm_R",
+     "hand_R",
+     "thigh_R",
+     "shin_R",
+     "foot_R",
+     "toe_R",
+     "tail1",
+     "tail2",
+     "tail3",
+     "tail4",
+     "tail5"
+    ],
+    "tail": true,
+    "weapon": null
+   },
+   "textures": [
+    {
+     "slot": "baseColor",
+     "format": "JPEG",
+     "size": "2048x2048",
+     "embedded": true
+    }
+   ],
+   "material": {
+    "metallic": 0.15,
+    "roughness": 0.42,
+    "note": "PBR factors replace the export defaults"
+   },
+   "animationClips": [],
+   "animation": "No baked clips. Bones are driven every frame by the sim-synced pose system (js/render/Animator.js + poses.js) through js/render/SkinnedFighter.js (IK, foot locking).",
+   "source": {
+    "file": "assets/source/armored_cobra.glb",
+    "bytes": 6718080,
+    "sha256": "fb26e178c3a35d416f4de417df4ec0bf99264cf12dc25feb0111c3ed9bb4e300",
+    "provenance": "Uploaded by the project owner in the Claude Code session on 2026-10-27. Exported by trimesh (glTF generator string); static textured mesh, no rig or animation.",
+    "rights": "Supplied by the project owner for use in this game. Licence/terms of the tool that generated it were not provided - confirm before public or commercial distribution."
+   },
+   "processing": "tools/charbuild/rig.py: joint placement (tools/charbuild/rigdefs.py), volumetric-geodesic skin weights, rescale to in-game height, JPEG texture re-encode.",
+   "status": "complete: rigged, weighted and in game"
+  },
+  {
+   "fighter": "sora",
+   "model": "Tactical Soldier",
+   "file": "assets/characters/sora.glb",
+   "bytes": 1626464,
+   "sha256": "671f20b8829f32bcf0414a787c5f6ed87c0507eccf892ecf29e9a300866bee48",
+   "mesh": {
+    "vertices": 24463,
+    "triangles": 39198
+   },
+   "skeleton": {
+    "bones": 21,
+    "names": [
+     "hips",
+     "spine",
+     "chest",
+     "neck",
+     "head",
+     "clavicle_L",
+     "upperarm_L",
+     "forearm_L",
+     "hand_L",
+     "thigh_L",
+     "shin_L",
+     "foot_L",
+     "toe_L",
+     "clavicle_R",
+     "upperarm_R",
+     "forearm_R",
+     "hand_R",
+     "thigh_R",
+     "shin_R",
+     "foot_R",
+     "toe_R"
+    ],
+    "tail": false,
+    "weapon": null
+   },
+   "textures": [
+    {
+     "slot": "baseColor",
+     "format": "JPEG",
+     "size": "2048x2048",
+     "embedded": true
+    }
+   ],
+   "material": {
+    "metallic": 0.05,
+    "roughness": 0.72,
+    "note": "PBR factors replace the export defaults"
+   },
+   "animationClips": [],
+   "animation": "No baked clips. Bones are driven every frame by the sim-synced pose system (js/render/Animator.js + poses.js) through js/render/SkinnedFighter.js (IK, foot locking).",
+   "source": {
+    "file": "assets/source/soldier.glb",
+    "bytes": 5814788,
+    "sha256": "4454716d47d8d9e46268a847842135659e29770780f545892cbec8af2526637e",
+    "provenance": "Uploaded by the project owner in the Claude Code session on 2026-10-27. Exported by trimesh (glTF generator string); static textured mesh, no rig or animation.",
+    "rights": "Supplied by the project owner for use in this game. Licence/terms of the tool that generated it were not provided - confirm before public or commercial distribution."
+   },
+   "processing": "tools/charbuild/rig.py: joint placement (tools/charbuild/rigdefs.py), volumetric-geodesic skin weights, rescale to in-game height, JPEG texture re-encode.",
+   "status": "complete: rigged, weighted and in game"
+  }
+ ],
+ "procedural": [
+  {
+   "fighter": "kai",
+   "status": "procedural prototype body (js/render/FighterModel.js); no glTF supplied"
+  }
+ ],
+ "other": [
+  {
+   "file": "assets/portraits/roster.jpg",
+   "provenance": "rendered from the rigged models with tools/gallery.html?portraits=1",
+   "rights": "derived from the supplied models"
+  },
+  {
+   "file": "vendor/three/addons/loaders/GLTFLoader.js, utils/SkeletonUtils.js, utils/BufferGeometryUtils.js",
+   "provenance": "three@0.170.0 npm package (same release as vendor/three/three.module.min.js)",
+   "rights": "MIT"
+  }
+ ],
+ "missing": [
+  "No authored animation clips (mocap or keyframed) exist for these models; motion is the procedural pose system retargeted onto each skeleton.",
+  "No finger bones: hands keep their sculpted shape (fists / claws / weapon grips).",
+  "Kai (bonus fighter) has no supplied model."
+ ]
+}
