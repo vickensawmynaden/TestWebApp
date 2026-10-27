@@ -40,39 +40,73 @@ export function commandPriority(spec) {
   return (spec.motion ? 100 : 0) + bitCount(spec.buttons) * 10 + (spec.dir ? DIR_SPECIFICITY[spec.dir] : 0);
 }
 
+// Every input-history entry carries `n`, a per-fighter monotonically increasing input frame stamp.
+// Matching functions accept `minN`: entries stamped at or before it are ignored. The simulation
+// raises it after interruptions (hits, throws, knockdowns) and when a motion command is used, so
+// stale or already-consumed inputs can never fire a command later.
+
 // Finds `steps` (array of direction sets) in order inside the last `window` frames of the buffer.
-// The final step must be satisfied within the last `tail` frames.
-export function findMotion(buf, steps, window = MOTION_WINDOW, tail = 8) {
+// The final step must be satisfied within the last `tail` frames. The search runs backward from
+// the newest frame, so the most recent motion is always found: an older completed motion earlier
+// in the history can no longer hide a newer valid one.
+export function findMotion(buf, steps, window = MOTION_WINDOW, tail = 8, minN = -Infinity) {
   const start = Math.max(0, buf.length - window);
-  let step = 0, lastIdx = -1;
-  for (let i = start; i < buf.length && step < steps.length; i++) {
-    if (steps[step].includes(buf[i].dir)) { step++; lastIdx = i; }
+  const valid = (i) => i >= start && buf[i].n > minN;
+  let i = buf.length - 1;
+  // newest frame within the tail that satisfies the final step
+  const last = steps[steps.length - 1];
+  while (i >= buf.length - tail && valid(i) && !last.includes(buf[i].dir)) i--;
+  if (i < buf.length - tail || !valid(i)) return false;
+  // earlier steps, nearest first
+  for (let s = steps.length - 2; s >= 0; s--) {
+    i--;
+    while (valid(i) && !steps[s].includes(buf[i].dir)) i--;
+    if (!valid(i)) return false;
   }
-  return step === steps.length && lastIdx >= buf.length - tail;
+  return true;
 }
 
-export function motionMatched(buf, motion) { return findMotion(buf, MOTIONS[motion]); }
+// Stamp of the frame that completed the newest matching motion (for consumption), or null.
+export function motionEnd(buf, motion, minN = -Infinity) {
+  const steps = MOTIONS[motion];
+  if (!findMotion(buf, steps, MOTION_WINDOW, 8, minN)) return null;
+  for (let i = buf.length - 1; i >= 0; i--) if (steps[steps.length - 1].includes(buf[i].dir)) return buf[i].n;
+  return null;
+}
+
+export function motionMatched(buf, motion, minN = -Infinity) { return findMotion(buf, MOTIONS[motion], MOTION_WINDOW, 8, minN); }
 
 // Buttons pressed within the leniency window (newest frame included).
-export function recentPresses(buf, frames = MULTI_PRESS_LENIENCY + 1) {
+export function recentPresses(buf, frames = MULTI_PRESS_LENIENCY + 1, minN = -Infinity) {
   let m = 0;
-  for (let i = Math.max(0, buf.length - frames); i < buf.length; i++) m |= buf[i].press;
+  for (let i = Math.max(0, buf.length - frames); i < buf.length; i++) if (buf[i].n > minN) m |= buf[i].press;
   return m;
 }
 
 export function dirMatches(specDir, dir) { return !specDir || DIR_SETS[specDir].includes(dir); }
 
 // True when `spec` is satisfied by the input buffer on its newest frame.
-export function commandMatches(spec, buf, { requireFreshPress = true } = {}) {
+// exactDir: a command written without a direction only matches with the stick in neutral
+// (string follow-ups use this so 1 then f+2 is not read as the 1,2 string).
+export function commandMatches(spec, buf, { requireFreshPress = true, minN = -Infinity, motionMinN = minN, exactDir = false } = {}) {
   if (spec.special || !buf.length) return false;
   const cur = buf[buf.length - 1];
-  const pressed = recentPresses(buf);
+  if (cur.n <= minN) return false;
+  const pressed = recentPresses(buf, MULTI_PRESS_LENIENCY + 1, minN);
   if ((pressed & spec.buttons) !== spec.buttons) return false;
   if (requireFreshPress && !(cur.press & spec.buttons)) return false;
   if (spec.motion) {
-    if (!motionMatched(buf, spec.motion)) return false;
+    if (!motionMatched(buf, spec.motion, Math.max(minN, motionMinN))) return false;
     if (spec.motion === 'ff' && cur.dir !== 6 && cur.dir !== 5) return false;
     return true;
   }
+  if (exactDir && !spec.dir && cur.dir !== 5) return false;
   return dirMatches(spec.dir, cur.dir);
+}
+
+// Command notation for a parsed spec (used for display and by input bots).
+export function specButtons(spec) {
+  let s = '';
+  for (const [c, bit] of Object.entries(BUTTON_BITS)) if (spec.buttons & bit) s += (s ? '+' : '') + c;
+  return s;
 }

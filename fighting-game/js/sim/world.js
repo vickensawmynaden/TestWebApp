@@ -4,11 +4,21 @@ import {
   ARENA_HALF, BODY_RADIUS, HURT_RADIUS, GRAVITY, AIR_GRAVITY, START_DISTANCE, MAX_JUGGLE_HITS,
   THROW_BREAK_WINDOW, HURT_STAND, HURT_CROUCH, HURT_DOWN, HB_HIGH, HB_MID, HB_LOW, B1, B2, B3, B4,
 } from './constants.js';
-import { commandMatches, motionMatched, recentPresses } from './commands.js';
+import { commandMatches, motionMatched, motionEnd, recentPresses } from './commands.js';
 import { Fighter } from './fighter.js';
 
 const HITSTOP = { light: 5, medium: 7, heavy: 10 };
-const ATTACK_BUFFER_FRAMES = 8;
+// Input buffering. A buffered attack remembers the frame it was entered and expires after
+// BUFFER_TTL frames; it is also discarded by any interruption (see INTERRUPT_STATES).
+export const ATTACK_BUFFER_FRAMES = 8;   // late-recovery frames in which the next attack may be entered
+export const PUNISH_BUFFER_FRAMES = 6;   // last blockstun frames in which a punish may be entered
+export const BUFFER_TTL = 10;            // a buffered attack fires within this many frames or is dropped
+export const WALL_STUN_MAX = 60;
+export const HIT_PUSH = 0.03;
+export const BLOCK_PUSH = 0.035;         // base block pushback speed (~0.25 m)            // base standing-hit pushback speed (decays by 0.86 per frame, ~0.21 m)         // wall-splat stun can be extended by hits, never beyond this
+// States that interrupt the fighter: queued / buffered attacks are dropped and every input entered
+// before the interruption is invalidated (cannot complete a command afterwards).
+const INTERRUPT_STATES = new Set(['hit', 'air', 'wall', 'crumple', 'down', 'thrown', 'throwing', 'parried', 'throwBreak', 'ko']);
 
 export function emptyInput() {
   return { up: false, down: false, left: false, right: false, b1: false, b2: false, b3: false, b4: false,
@@ -102,7 +112,7 @@ export class World {
         this.neutral(f); break;
       case 'dash':
         if (this.tryAttack(f)) break;
-        if (motionMatched(f.buf, 'bb') && f.press === 0 && f.dir === 4 && f.prevDir() !== 4) { this.startBackdash(f); break; }
+        if (motionMatched(f.buf, 'bb', f.minInputN) && f.press === 0 && f.dir === 4 && f.prevDir() !== 4) { this.startBackdash(f); break; }
         if (f.t >= 16) { if (f.dir === 6) this.setState(f, 'run'); else this.toNeutral(f); }
         break;
       case 'backdash':
@@ -132,6 +142,8 @@ export class World {
         break;
       case 'attack': this.attackStep(f); break;
       case 'block': case 'hit': case 'parried':
+        // Punish inputs entered during the last blockstun frames come out on the first free frame.
+        if (f.state === 'block' && f.press && f.t >= f.stun - PUNISH_BUFFER_FRAMES) this.bufferAttack(f);
         if (f.t >= f.stun) { this.endCombo(f); this.toNeutral(f); }
         break;
       case 'crumple':
@@ -155,14 +167,27 @@ export class World {
     this.computeGuard(f);
   }
 
-  setState(f, s) { f.state = s; f.t = 0; if (s !== 'attack') { f.move = null; f.mf = 0; } }
+  setState(f, s) {
+    f.state = s; f.t = 0;
+    if (s !== 'attack') { f.move = null; f.mf = 0; }
+    if (INTERRUPT_STATES.has(s)) { f.queued = null; f.buffered = null; f.invalidateInputs(); }
+  }
 
   toNeutral(f) {
     f.move = null; f.mf = 0; f.queued = null;
     const d = f.dir;
     if (d === 1 || d === 2 || d === 3) this.setState(f, 'crouch');
     else this.setState(f, 'idle');
-    if (f.buffered) { const m = f.buffered; f.buffered = null; this.startMove(f, m); }
+    const b = f.buffered;
+    f.buffered = null;
+    // Revalidate: not expired, not entered before an interruption, still usable (Rage).
+    if (b && this.frame <= b.expires && b.n > f.minInputN && (!b.move.rage || f.rage)) this.startMove(f, b.move);
+  }
+
+  // Remember the attack matching the newest input so it comes out when the fighter is free.
+  bufferAttack(f) {
+    const m = this.findMove(f, f.commandMoves);
+    if (m && m.level !== 'throw') f.buffered = { move: m, n: f.inputN, frame: this.frame, expires: this.frame + BUFFER_TTL };
   }
 
   endCombo(f) {
@@ -178,8 +203,9 @@ export class World {
     const upNow = d === 8, upPrev = pd === 8 || pd === 7 || pd === 9;
     const downNow = d === 2, downPrev = pd === 2 || pd === 1 || pd === 3;
     // Dash / backdash (f,f and b,b)
-    if (d === 6 && pd !== 6 && motionMatched(f.buf, 'ff') && f.state !== 'crouch') { this.startDash(f); return; }
-    if (d === 4 && pd !== 4 && motionMatched(f.buf, 'bb')) { this.startBackdash(f); return; }
+    const mn = Math.max(f.minInputN, f.motionN);
+    if (d === 6 && pd !== 6 && motionMatched(f.buf, 'ff', mn) && f.state !== 'crouch') { this.startDash(f); return; }
+    if (d === 4 && pd !== 4 && motionMatched(f.buf, 'bb', mn)) { this.startBackdash(f); return; }
     // Jumps
     if ((d === 9 || d === 7) && !(pd === 9 || pd === 7 || pd === 8)) { this.startJump(f, d === 9 ? 1 : -1); return; }
     // Sidestep: tap up = into the screen, tap down = out of the screen. Double tap = sidewalk.
@@ -213,7 +239,7 @@ export class World {
     for (const m of list) {
       if (m.spec.special) continue;
       if (m.rage && !f.rage) continue;
-      if (commandMatches(m.spec, f.buf)) return m;
+      if (commandMatches(m.spec, f.buf, { minN: f.minInputN, motionMinN: f.motionN })) return m;
     }
     return null;
   }
@@ -230,6 +256,9 @@ export class World {
     f.state = 'attack'; f.t = 0;
     f.move = m; f.mf = 0; f.moveHit = false; f.moveResult = null; f.queued = null; f.buffered = null;
     f.throwData = null;
+    f.attackSeq++;
+    // A motion command consumes its motion: the same quarter-circle / dash cannot fire twice.
+    if (m.spec.motion) f.motionN = Math.max(f.motionN, motionEnd(f.buf, m.spec.motion, f.minInputN) ?? f.inputN);
     if (m.rage) { f.rage = false; f.rageUsed = true; this.emit('rageArt', { fighter: f.index }); }
     this.emit('swing', { fighter: f.index, move: m.id, sfx: m.sfx || 'light' });
   }
@@ -245,20 +274,21 @@ export class World {
         this.startMove(f, better); f.mf = 1; return;
       }
     }
-    // String follow-ups.
-    if (m.stringSpecs.length && !f.queued && f.press && f.mf >= Math.max(3, m.startup - 4) && f.mf <= m.startup + m.active + Math.floor(m.recovery * 0.6)) {
+    // String follow-ups: accepted inside the follow-up's input window, executed no earlier than its
+    // execution frame, and only if the parent's result and the opponent's state allow it.
+    if (m.stringSpecs.length && !f.queued && f.press) {
       for (const s of m.stringSpecs) {
-        if (commandMatches(s.spec, f.buf)) { f.queued = f.moveMap.get(s.to); break; }
+        if (f.mf < s.window[0] || f.mf > s.window[1]) continue;
+        if (commandMatches(s.spec, f.buf, { minN: f.minInputN, exactDir: true })) { f.queued = { move: f.moveMap.get(s.to), s, n: f.inputN }; break; }
       }
     }
-    if (f.queued && f.mf >= m.startup + m.active) {
-      const q = f.queued; this.recordMoveInfo(f); this.startMove(f, q); f.mf = 0; return;
+    if (f.queued && f.mf >= f.queued.s.exec) {
+      const q = f.queued;
+      if (this.stringAllowed(f, q.s)) { this.recordMoveInfo(f); this.startMove(f, q.move); f.chainFrom = m.id; f.mf = 0; return; }
+      f.queued = null;   // condition failed: the follow-up does not come out
     }
     // Buffer the next attack during late recovery.
-    if (!f.queued && f.press && f.mf > m.total - ATTACK_BUFFER_FRAMES && m.level !== 'throw') {
-      const b = this.findMove(f, f.commandMoves);
-      if (b) f.buffered = b;
-    }
+    if (!f.queued && f.press && f.mf > m.total - ATTACK_BUFFER_FRAMES && m.level !== 'throw') this.bufferAttack(f);
     // Sideways step during startup (Sora's Axis Heel); ordinary collision still applies.
     if (m.sideStep && f.mf >= m.sideStep.from && f.mf <= m.sideStep.to) {
       const per = m.sideStep.dist / (m.sideStep.to - m.sideStep.from + 1);
@@ -280,11 +310,21 @@ export class World {
     }
   }
 
+  stringAllowed(f, s) {
+    const res = f.moveResult === 'ch' ? 'ch' : f.moveResult === 'hit' ? 'hit' : f.moveResult === 'block' ? 'block' : 'whiff';
+    if (!s.on.includes(res)) return false;
+    const o = this.opponent(f);
+    const airborne = o.state === 'air';
+    if (s.target === 'airborne' && !airborne) return false;
+    if (s.target === 'grounded' && airborne) return false;
+    return true;
+  }
+
   recordMoveInfo(f) {
     const m = f.move;
     if (!m) return;
-    f.lastMoveInfo = { name: m.name, cmd: m.cmd, startup: m.startup, result: f.moveResult || 'whiff',
-      block: m.block, hit: m.hit, onHit: m.onHit || null, level: m.level, dmg: m.dmg };
+    f.lastMoveInfo = { id: m.id, name: m.name, cmd: m.cmd, startup: m.startup, result: f.moveResult || 'whiff',
+      block: m.block, hit: m.hit, onHit: m.onHit || null, onCH: m.onCH || null, level: m.level, dmg: m.dmg, display: m.display, seq: f.attackSeq };
   }
 
   computeGuard(f) {
@@ -363,6 +403,9 @@ export class World {
       const m = f.move;
       f.state = 'throwing'; f.t = 0;
       o.state = 'thrown'; o.t = 0; o.move = null; o.mf = 0;
+      // A throw interrupts both fighters: nothing entered before it may fire afterwards
+      // (the victim's break input is read from the presses accumulated below, not from commands).
+      for (const x of [f, o]) { x.queued = null; x.buffered = null; x.invalidateInputs(); }
       f.throwData = { phase: 'break', move: m, anim: m.throwAnim };
       // Presses from the last few frames count, so a slightly early break still works.
       o.throwData = { phase: 'break', move: m, anim: m.throwAnim, breakMask: m.breakMask, pressAcc: recentPresses(o.buf, 4) };
@@ -443,7 +486,7 @@ export class World {
   inCombo(d) { return ['hit', 'air', 'wall', 'crumple', 'down', 'parried'].includes(d.state) && d.combo.active; }
 
   startCombo(d) {
-    if (!d.combo.active) { d.combo.active = true; d.combo.hits = 0; d.combo.dmg = 0; d.combo.juggle = 0; d.combo.wallUsed = false; d.combo.crumpleUsed = false; d.juggleGravity = 1; }
+    if (!d.combo.active) { d.combo.active = true; d.combo.hits = 0; d.combo.dmg = 0; d.combo.juggle = 0; d.combo.wallUsed = false; d.combo.crumpleUsed = false; d.combo.terminal = false; d.combo.log = []; d.juggleGravity = 1; }
   }
 
   applyDamage(a, d, base, scale) {
@@ -491,7 +534,7 @@ export class World {
       a.moveResult = 'block';
       this.setState(d, 'block');
       d.stun = Math.max(1, remaining + m.block);
-      d.pushV = 0.055 * (m.sfx === 'heavy' ? 1.3 : 1) / d.def.weight;
+      d.pushV = BLOCK_PUSH * (m.sfx === 'heavy' ? 1.3 : 1) / d.def.weight;
       this.hitstop = m.sfx === 'heavy' ? 7 : 5;
       this.emit('block', { attacker: a.index, defender: d.index, pos: hitPos, heavy: m.sfx === 'heavy' });
       return;
@@ -511,6 +554,7 @@ export class World {
     const startupCatch = !!m.startupBonus && d.state === 'attack' && d.move && d.mf < d.move.startup;
     if (startupCatch) scale *= 1 + m.startupBonus;
     const dmg = this.applyDamage(a, d, m.dmg, scale);
+    d.combo.log.push({ move: m.id, dmg, counter, frame: this.frame, state: d.state });
     const reaction = (counter && m.onCH) || m.onHit || null;
     const heavy = m.sfx === 'heavy' || counter || !!reaction;
     this.hitstop = HITSTOP[m.sfx || 'medium'] + (counter ? 3 : 0);
@@ -521,16 +565,23 @@ export class World {
     d.hitHeavy = heavy;
     d.face.x = -away.x; d.face.z = -away.z;
 
-    if (airborneVictim || (d.state === 'down' && m.groundHit)) {
-      // Juggle: re-lift the victim with increasing gravity so combos always end.
+    if (d.state === 'down' && m.groundHit) {
+      // Hits on a grounded opponent deal damage but never pick them back up.
       d.combo.juggle++;
-      if (d.state === 'down') { d.state = 'air'; d.t = 0; }
-      const lift = d.combo.juggle >= MAX_JUGGLE_HITS ? 0 : (reaction === 'launch' ? 0.075 : 0.05);
-      d.vel.y = Math.max(d.vel.y * 0.3, lift * Math.pow(0.93, d.combo.juggle));
-      d.juggleGravity = 1 + 0.1 * d.combo.juggle;
-      const carry = (m.push || 0.4) * 0.05;
+    } else if (airborneVictim) {
+      // Juggle: re-lift the victim with increasing gravity so combos always end. Launchers lift
+      // most, fillers keep the victim up, finishers end the juggle; after a finisher (terminal)
+      // nothing lifts the victim again.
+      d.combo.juggle++;
+      const role = m.role;
+      let lift = d.combo.juggle >= MAX_JUGGLE_HITS ? 0 : role === 'launcher' ? 0.075 : role === 'finisher' ? 0.03 : 0.05;
+      if (d.combo.terminal) lift = 0;
+      d.vel.y = d.combo.terminal ? Math.min(d.vel.y, 0) : Math.max(d.vel.y * 0.3, lift * Math.pow(0.93, d.combo.juggle));
+      d.juggleGravity = 1 + 0.1 * d.combo.juggle + (d.combo.terminal ? 0.4 : 0);
+      const carry = (m.push || 0.4) * (role === 'finisher' ? 0.09 : 0.05);
       d.knockV.x = away.x * carry; d.knockV.z = away.z * carry;
       if (reaction === 'wallsplat' && !d.combo.wallUsed) { d.knockV.x = away.x * 0.12; d.knockV.z = away.z * 0.12; d.wallsplatPending = true; }
+      if (role === 'finisher') d.combo.terminal = true;
     } else if (reaction === 'launch' || (d.state === 'crumple') || (d.state === 'wall' && (reaction === 'launch' || reaction === 'knockdown'))) {
       this.setState(d, 'air');
       d.vel.y = reaction === 'launch' ? (m.launch || 0.1) : 0.07;
@@ -541,6 +592,7 @@ export class World {
     } else if (reaction === 'knockdown') {
       this.setState(d, 'air');
       d.vel.y = 0.06; d.juggleGravity = 1.3;
+      d.combo.terminal = true;           // a knockdown is a finisher: it cannot be juggled further up
       d.combo.juggle = Math.max(d.combo.juggle, 3);
       const sp = 0.03 + (m.push || 0.6) * 0.03;
       d.knockV.x = away.x * sp; d.knockV.z = away.z * sp;
@@ -558,14 +610,14 @@ export class World {
       this.setState(d, 'crumple'); d.combo.crumpleUsed = true;
       this.emit('crumple', { fighter: d.index });
     } else if (d.state === 'wall') {
-      d.stun = Math.min(d.stun + 6, d.t + 40);
+      d.stun = Math.min(d.stun + 6, WALL_STUN_MAX);   // absolute cap: wall loops always end
     } else {
       // Standing hit-stun. Long ground combos lose hit-stun so they cannot loop forever.
       const decay = Math.max(0, d.combo.hits - 4) * 3;
       const stun = Math.max(1, remaining + m.hit + (counter ? 4 : 0) - decay);
       this.setState(d, 'hit');
       d.stun = stun;
-      d.pushV = (0.05 + (m.push || 0) * 0.04) / d.def.weight;
+      d.pushV = (HIT_PUSH + (m.push || 0) * 0.04) / d.def.weight;
     }
     this.emit(counter ? 'counter' : 'hit', { attacker: a.index, defender: d.index, pos: hitPos, heavy, dmg, sfx: m.sfx, level: lvl, combo: d.combo.hits, reaction, move: m.id, startupCatch });
     if (heavy) this.emit('shake', { amount: m.rage ? 1.2 : counter ? 0.6 : 0.4 });

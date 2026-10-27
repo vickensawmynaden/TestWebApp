@@ -94,12 +94,22 @@ function standardThrow(id, o = {}) {
 
 const REN_MOVES = [
   { id: 'ren_1', name: 'Anchor Jab', cmd: '1', level: 'high', dmg: 5, startup: 10, active: 2, recovery: 14, hitstun: 21, blockstun: 16,
-    reach: 0.66, radius: 0.17, limb: 'lHand', anim: 'renJab', sfx: 'light', signature: true },
+    reach: 0.66, radius: 0.17, limb: 'lHand', anim: 'renJab', sfx: 'light', signature: true,
+    strings: [{ cmd: '2', to: 'ren_12' }] },
+  // 1,2 is a natural combo (the cross arrives inside the jab's hitstun); the b+4 heel after it
+  // arrives after the cross's hitstun ends, so it can be blocked (or ducked: it is high).
+  { id: 'ren_12', name: 'Anchor Cross', cmd: '2', inString: true, level: 'high', dmg: 8, startup: 11, active: 2, recovery: 17, hitstun: 22, blockstun: 13,
+    advance: 0.12, reach: 0.7, radius: 0.18, limb: 'rHand', anim: 'crossR', sfx: 'medium', role: 'filler',
+    strings: [{ cmd: 'b+4', to: 'ren_12b4' }] },
+  { id: 'ren_12b4', name: 'Crescent Finish', cmd: 'b+4', inString: true, level: 'high', dmg: 13, startup: 22, active: 3, recovery: 28, hitstun: 0, blockstun: 14,
+    onHit: 'knockdown', tracking: 1, advance: 0.15, reach: 0.85, radius: 0.24, limb: 'rFoot', anim: 'renCrescent', sfx: 'heavy' },
   ...basics('ren'),
   { id: 'ren_f2', name: 'Harbor Palm', cmd: 'f+2', level: 'mid', dmg: 11, startup: 14, active: 3, recovery: 20, hitstun: 26, blockstun: 14,
     advance: 0.2, push: 0.5, reach: 0.7, radius: 0.22, limb: 'rHand', anim: 'renPalm', sfx: 'medium', signature: true },
   { id: 'ren_d3', name: 'Stone Sweep', cmd: 'd+3', level: 'low', dmg: 9, startup: 16, active: 3, recovery: 26, hitstun: 26, blockstun: 12,
     crouching: true, reach: 0.85, radius: 0.24, limb: 'lFoot', anim: 'renSweep', sfx: 'medium', signature: true },
+  { id: 'ren_df2', name: 'Rising Knife Hand', cmd: 'df+2', level: 'mid', dmg: 11, startup: 15, active: 2, recovery: 24, hitstun: 0, blockstun: 12,
+    onHit: 'launch', launch: 0.1, reach: 0.52, radius: 0.24, limb: 'rHand', hitPoint: [0.02, 1.4, 0.52], anim: 'uppercutR', sfx: 'heavy' },
   { id: 'ren_b4', name: 'Crescent Heel', cmd: 'b+4', level: 'mid', dmg: 16, startup: 20, active: 3, recovery: 26, hitstun: 0, blockstun: 16,
     onHit: 'knockdown', tracking: 1.5, reach: 0.85, radius: 0.26, limb: 'rFoot', anim: 'renCrescent', sfx: 'heavy', signature: true },
   standardThrow('ren'),
@@ -107,14 +117,21 @@ const REN_MOVES = [
 
 const MAYA_MOVES = [
   { id: 'maya_1', name: 'Reef Jab', cmd: '1', level: 'high', dmg: 4, startup: 9, active: 2, recovery: 13, hitstun: 20, blockstun: 15,
-    reach: 0.62, radius: 0.16, limb: 'lHand', anim: 'mayaJab', sfx: 'light', signature: true },
+    reach: 0.62, radius: 0.16, limb: 'lHand', anim: 'mayaJab', sfx: 'light', signature: true,
+    strings: [{ cmd: '2', to: 'maya_12' }] },
+  // 1,2 is natural; the d+4 low kick after it is slower than the cross's hitstun (blockable low).
+  { id: 'maya_12', name: 'Reef Cross', cmd: '2', inString: true, level: 'high', dmg: 6, startup: 10, active: 2, recovery: 16, hitstun: 20, blockstun: 14,
+    advance: 0.12, reach: 0.66, radius: 0.17, limb: 'rHand', anim: 'crossR', sfx: 'medium', role: 'filler',
+    strings: [{ cmd: 'd+4', to: 'maya_12d4' }] },
+  { id: 'maya_12d4', name: 'Tide Low Kick', cmd: 'd+4', inString: true, level: 'low', dmg: 8, startup: 20, active: 2, recovery: 22, hitstun: 24, blockstun: 9,
+    advance: 0.2, reach: 0.8, radius: 0.22, limb: 'rFoot', anim: 'mayaLowKick', sfx: 'medium' },
   ...basics('maya', { spd: -1, dmg: 0.85, anim3: 'mayaTeep', anim4: 'mayaRound' }),
   { id: 'maya_f1', name: 'Twin-Step Elbow', cmd: 'f+1', level: 'mid', dmg: 8, startup: 12, active: 2, recovery: 17, hitstun: 22, blockstun: 15,
     advance: 0.35, reach: 0.5, radius: 0.2, limb: 'lElbow', hitPoint: [0.0, 1.25, 0.52], anim: 'mayaElbow', sfx: 'medium', signature: true },
   { id: 'maya_d4', name: 'Coral Low Kick', cmd: 'd+4', level: 'low', dmg: 6, startup: 13, active: 2, recovery: 18, hitstun: 20, blockstun: 11,
     reach: 0.8, radius: 0.22, limb: 'rFoot', anim: 'mayaLowKick', sfx: 'medium', signature: true },
   { id: 'maya_f4', name: 'Breaker Knee', cmd: 'f+4', level: 'mid', dmg: 13, startup: 16, active: 3, recovery: 24, hitstun: 0, blockstun: 14,
-    onHit: 'knockdown', advance: 0.3, reach: 0.5, radius: 0.26, limb: 'rKnee', hitPoint: [0.05, 1.05, 0.5], anim: 'mayaKnee', sfx: 'heavy', signature: true },
+    onHit: 'knockdown', onCH: 'launch', launch: 0.1, advance: 0.3, reach: 0.5, radius: 0.26, limb: 'rKnee', hitPoint: [0.05, 1.05, 0.5], anim: 'mayaKnee', sfx: 'heavy', signature: true },
   standardThrow('maya'),
 ];
 
