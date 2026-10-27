@@ -258,6 +258,7 @@ export class World {
     f.state = 'attack'; f.t = 0;
     f.move = m; f.mf = 0; f.moveHit = false; f.moveResult = null; f.queued = null; f.buffered = null;
     f.throwData = null;
+    f.chainFrom = null;      // set by the string code right after, for follow-ups (presentation only)
     f.attackSeq++;
     // A motion command consumes its motion: the same quarter-circle / dash cannot fire twice.
     if (m.spec.motion) f.motionN = Math.max(f.motionN, motionEnd(f.buf, m.spec.motion, f.minInputN) ?? f.inputN);

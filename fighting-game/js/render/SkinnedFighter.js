@@ -16,6 +16,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import { POSE_LAYOUT as L } from './poses.js';
 import { APPEARANCES } from './appearance.js';
+import { HB_HIGH, HB_MID, HB_LOW } from '../sim/constants.js';
 
 const DEG = Math.PI / 180;
 export const SKINNED_IDS = ['ren', 'maya', 'viktor', 'leila', 'caio', 'sora'];
@@ -78,10 +79,13 @@ export class SkinnedFighter {
       }
     });
     this.setupRest();
-    this.feet = [{ locked: false, pos: _v(), blend: 0 }, { locked: false, pos: _v(), blend: 0 }];
+    this.feet = [{ locked: false, pos: _v() }, { locked: false, pos: _v() }];
     this.world = {}; // bone -> { p: Vector3, q: Quaternion } in inner space
     for (const name of Object.keys(this.bones)) this.world[name] = { p: _v(), q: _q() };
     this.tailState = null;
+    this.lunge = _v();
+    this.tmpL = _v(); this.tmpW = _v();
+    this.handHalf = { L: this.J['handTip.L'].distanceTo(this.J['wrist.L']) * 0.5, R: this.J['handTip.R'].distanceTo(this.J['wrist.R']) * 0.5 };
   }
 
   setupRest() {
@@ -150,7 +154,65 @@ export class SkinnedFighter {
     w.q.copy(q);
   }
 
-  applyPose(p) {
+  // f (optional): the fighter's simulation state. During a strike the striking fist / foot is steered
+  // onto the simulation's hit point (limbHitPoint) so the visible limb and the authoritative hit
+  // volume agree; when the model's limb is too short to reach it, the body lunges forward by the
+  // shortfall (capped) with the planted feet held. Collision itself never reads the model.
+  applyPose(p, f = null) {
+    const strike = f ? this.strikeTarget(f) : null;
+    this.lunge.set(0, 0, 0);
+    this.applyCore(p, strike);
+    if (strike && strike.w > 0) {
+      const root = this.world[strike.hand ? 'upperarm_' + strike.side : 'thigh_' + strike.side].p;
+      const reach = strike.hand ? (this.len['ua' + strike.side] + this.len['fa' + strike.side]) * 0.99 : (this.len['th' + strike.side] + this.len['sh' + strike.side]) * 0.99;
+      const vec = this.tmpL.subVectors(strike.target, root);
+      vec.y = Math.min(strike.hi, Math.max(strike.lo, root.y)) - root.y;   // height inside the band
+      const short = vec.length() - reach;
+      if (short > 0.005) {
+        const vy = vec.y;
+        vec.y = 0;
+        const hd = vec.length();
+        const len = Math.min(MAX_LUNGE[this.charId] ?? MAX_LUNGE.default, short);
+        if (hd > 1e-3) this.lunge.copy(vec).multiplyScalar(len * strike.w / hd);
+        // Strikes the limb cannot raise high enough: hop (lift the body) so it reaches the band.
+        if (vy > 0) {
+          const h = Math.max(0, hd - len);
+          const lift = h < reach ? vy - Math.sqrt(reach * reach - h * h) : vy;
+          if (lift > 0) this.lunge.y = Math.min(MAX_HOP[this.charId] ?? MAX_HOP.default, lift) * strike.w;
+        }
+        this.applyCore(p, strike);
+      }
+    }
+    this.lastStrike = strike;
+  }
+
+  // Inner-space point the striking limb must reach this frame, and the blend weight (ramps in
+  // during acceleration, holds through the active frames, releases over the follow-through).
+  strikeTarget(f) {
+    const m = f.move;
+    if (f.state !== 'attack' || !m || !m.hitPointLocal || !['lHand', 'rHand', 'lFoot', 'rFoot'].includes(m.limb)) return null;
+    const s = m.startup, a = m.active || 1, mf = f.mf;
+    let w;
+    if (mf < s * 0.5) w = 0;
+    else if (mf < s) { const k = (mf - s * 0.5) / (s * 0.5); w = k * k * (3 - 2 * k); }
+    else if (mf < s + a) w = 1;
+    else w = Math.max(0, 1 - (mf - s - a) / 6);
+    if (w <= 0) return null;
+    const sc = f.def.scale || 1;
+    const hp = m.hitPointLocal;
+    const st = this.strikeV || (this.strikeV = { target: _v() });
+    st.target.set(-hp[0] / sc, hp[1] / sc, hp[2] / sc);
+    // Collision uses ground-plane reach plus the attack level's height band, so the limb is steered
+    // to the hit point horizontally and kept at its animated height, clamped into the band.
+    const band = m.level === 'high' ? HB_HIGH : m.level === 'low' ? HB_LOW : HB_MID;
+    st.lo = band[0] / sc + 0.05; st.hi = band[1] / sc - 0.05;
+    st.hand = m.limb.endsWith('Hand');
+    st.side = m.limb[0] === 'l' ? 'L' : 'R';
+    st.w = w;
+    return st;
+  }
+
+  applyCore(p, strike) {
     const v = this.v || (this.v = {
       P: _v(), pelvisM: _v(), chestP: _v(), shoulderP: _v(), rel: _v(), target: _v(), pole: _v(), hipP: _v(),
       qHip: _q(), qChestL: _q(), qChestP: _q(), half: _q(), qs: _q(), qc: _q(), qn: _q(), qh: _q(), qf: _q(), qt: _q(), eu: new THREE.Euler(),
@@ -161,7 +223,7 @@ export class SkinnedFighter {
     const qHip = v.qHip.setFromEuler(v.eu.set(p[L.hipRot] * DEG, p[L.hipRot + 1] * DEG, p[L.hipRot + 2] * DEG, 'YXZ'));
     const qChestL = v.qChestL.setFromEuler(v.eu.set(p[L.chest] * DEG, p[L.chest + 1] * DEG, p[L.chest + 2] * DEG, 'YXZ'));
     // ---- model pelvis: height scaled about the ground by the leg ratio
-    const pelvisM = v.pelvisM.set(P.x, this.ankleY + (P.y - 0.06 - 0.075) * kL + this.pelvisAboveHip, P.z);
+    const pelvisM = v.pelvisM.set(P.x + this.lunge.x, this.ankleY + (P.y - 0.06 - 0.075) * kL + this.pelvisAboveHip + this.lunge.y, P.z + this.lunge.z);
     this.pivot.position.set(pelvisM.x - p[L.rootOff], pelvisM.y + p[L.rootOff + 1], pelvisM.z + p[L.rootOff + 2]);
     this.pivot.rotation.set(p[L.root] * DEG, p[L.root + 1] * DEG, p[L.root + 2] * DEG, 'YXZ');
     this.inner.position.set(-pelvisM.x, -pelvisM.y, -pelvisM.z);
@@ -193,6 +255,12 @@ export class SkinnedFighter {
       const cw = this.world['clavicle_' + s];
       const shoulderM = this.world['upperarm_' + s].p.copy(this.restOffset['upperarm_' + s]).applyQuaternion(cw.q).add(cw.p);
       const target = v.target.copy(shoulderM).add(rel);
+      if (strike && strike.hand && strike.side === s) {
+        // the fist (half a hand beyond the wrist) meets the hit point
+        const want = this.tmpW.set(strike.target.x, Math.min(strike.hi, Math.max(strike.lo, target.y)), strike.target.z);
+        const toHit = this.tmpL.subVectors(want, shoulderM).normalize().multiplyScalar(this.handHalf[s]);
+        target.lerp(this.tmpL.subVectors(want, toHit), strike.w);
+      }
       const pole = v.pole.set(-p[ek], p[ek + 1], p[ek + 2]);
       this.limb('upperarm_' + s, 'forearm_' + s, shoulderM, target, pole, this.len['ua' + s], this.len['fa' + s], this.restLimb['arm' + s]);
       this.place('hand_' + s, this.weapon && this.weapon.hand === 'hand_' + s ? this.aimWeapon(this.world['forearm_' + s].q, qc) : this.world['forearm_' + s].q);
@@ -207,7 +275,9 @@ export class SkinnedFighter {
       const rel = v.rel.set(-p[fk], p[fk + 1], p[fk + 2]).sub(hipP).multiplyScalar(kL);
       const hipM = this.world['thigh_' + s].p.copy(this.restOffset['thigh_' + s]).applyQuaternion(hw.q).add(hw.p);
       const target = v.target.copy(hipM).add(rel);
-      this.lockFoot(side > 0 ? 0 : 1, target, p[fk + 1]);
+      const striking = strike && !strike.hand && strike.side === s;
+      this.lockFoot(side > 0 ? 0 : 1, target, striking ? 0 : (p[L.plant + (side > 0 ? 0 : 1)] ?? 0));
+      if (striking) target.lerp(this.tmpW.set(strike.target.x, Math.min(strike.hi, Math.max(strike.lo, target.y)), strike.target.z), strike.w);
       const pole = v.pole.set(-p[kk], p[kk + 1], p[kk + 2]);
       this.limb('thigh_' + s, 'shin_' + s, hipM, target, pole, this.len['th' + s], this.len['sh' + s], this.restLimb['leg' + s]);
       // Pose foot yaw is absolute; the model's rest foot may be turned out, so remove that first.
@@ -262,22 +332,22 @@ export class SkinnedFighter {
     this.place(lower, frameRotation(rest.d2, rest.bend, k.dir.subVectors(end, mid).normalize(), bend, k.q, k.m0, k.m1));
   }
 
-  // Feet planted in the pose stay where they touched down (in world space) until the pose lifts
-  // them or they drift too far from the pose target, then they release smoothly.
-  lockFoot(i, target, poseY) {
+  // Foot locking driven by the animation timeline: the Animator's per-foot plant weight (0..1, on
+  // the simulation's frame clock) says when a foot is on the floor. A foot locks where it touched
+  // down and holds that world position for as long as it is planted; the lock weight is the plant
+  // weight, so feet release and re-plant over the authored frames, independent of render rate.
+  // If the body travels so far that the locked foot would overstretch, it re-anchors smoothly.
+  lockFoot(i, target, plant) {
     const f = this.feet[i];
     const k = this.fv || (this.fv = { w: _v(), l: _v(), inv: new THREE.Matrix4() });
-    const grounded = poseY < 0.085 && this.pivot.rotation.x === 0 && this.pivot.rotation.z === 0 && this.root.position.y < 0.01;
     const toWorld = this.inner.matrixWorld;
     const tw = k.w.copy(target).applyMatrix4(toWorld);
-    if (!grounded) { f.locked = false; f.blend = Math.max(0, f.blend - 0.25); }
-    else if (!f.locked) { f.locked = true; f.pos.copy(tw); f.blend = 1; }
-    else if (f.pos.distanceTo(tw) > 0.16 * this.kLeg + 0.04) f.pos.lerp(tw, 0.5);
-    if (f.blend > 0) {
-      const lw = k.l.copy(f.pos).applyMatrix4(k.inv.copy(toWorld).invert());
-      lw.y = target.y;
-      target.lerp(lw, f.blend);
-    }
+    if (plant < 0.05) { f.locked = false; return; }
+    if (!f.locked) { f.locked = true; f.pos.copy(tw); }
+    else if (f.pos.distanceTo(tw) > 0.16 * this.kLeg + 0.04) f.pos.lerp(tw, 0.35);
+    const lw = k.l.copy(f.pos).applyMatrix4(k.inv.copy(toWorld).invert());
+    lw.y = target.y;
+    target.lerp(lw, Math.min(1, plant));
   }
 
   // Tail: each segment aims at its rest position (keeps a ground coil on the ground), with lag.
@@ -311,7 +381,7 @@ export class SkinnedFighter {
 
   // World position of a limb end (hit trails, sparks).
   limbWorld(limb, out) {
-    const map = { lHand: 'hand_L', rHand: 'hand_R', lFoot: 'foot_L', rFoot: 'foot_R', lKnee: 'shin_L', rKnee: 'shin_R', body: 'chest' };
+    const map = { lHand: 'hand_L', rHand: 'hand_R', lFoot: 'foot_L', rFoot: 'foot_R', lKnee: 'shin_L', rKnee: 'shin_R', lElbow: 'forearm_L', rElbow: 'forearm_R', body: 'chest' };
     const bone = this.bones[map[limb] || 'chest'];
     bone.updateWorldMatrix(true, false);
     if (limb === 'lHand' || limb === 'rHand') {
@@ -328,3 +398,8 @@ export class SkinnedFighter {
 }
 
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
+// Metres the body may lunge to bring a short limb onto its hit point. Ren's chibi model has limbs
+// at 40-65 % of the length his move data assumes, so he dashes into his strikes.
+const MAX_LUNGE = { default: 0.3, ren: 0.6, caio: 0.4 };
+// Metres the body may lift (hop) for a strike the limb cannot raise high enough (Ren: chibi legs).
+const MAX_HOP = { default: 0.35, ren: 0.6 };

@@ -53,6 +53,8 @@ class App {
     }
     this.ui.push(new TitleScreen(this));
     window.__app = this; // handy for debugging and automated tests
+    // F2: development overlay (hit / hurt volumes, visible striking limb, contact events)
+    window.addEventListener('keydown', (e) => { if (e.code === 'F2') { e.preventDefault(); this.view.debug.toggle(); } });
     requestAnimationFrame((t) => this.frame(t));
   }
 

@@ -4,6 +4,7 @@
 // A detailed rigged glTF can replace this class later as long as it follows the same pose data.
 import * as THREE from 'three';
 import { POSE_LAYOUT as L } from './poses.js';
+import { HB_HIGH, HB_MID, HB_LOW } from '../sim/constants.js';
 import { APPEARANCES } from './appearance.js';
 import { clothTexture, noiseTexture } from './textures.js';
 
@@ -442,8 +443,17 @@ export class FighterModel {
   }
 
   // ------------------------------------------------------------------ pose application
-  applyPose(p) {
+  // f (optional): simulation state; the striking hand / foot is kept inside the attack level's
+  // height band at contact (collision uses that band), as in SkinnedFighter.
+  applyPose(p, f = null) {
     const b = this.b, t = this.tmp;
+    this.bandLimb = null;
+    const m = f && f.state === 'attack' ? f.move : null;
+    if (m && m.hitPointLocal && ['lHand', 'rHand', 'lFoot', 'rFoot'].includes(m.limb) && f.mf >= m.startup * 0.5 && f.mf < m.startup + (m.active || 1) + 6) {
+      const band = m.level === 'high' ? HB_HIGH : m.level === 'low' ? HB_LOW : HB_MID;
+      const sc = f.def.scale || 1;
+      this.bandLimb = { limb: m.limb, lo: band[0] / sc + 0.05, hi: band[1] / sc - 0.05 };
+    }
     // Root rotation pivots around the pelvis so falls / spins look natural.
     const px = -p[L.pelvis], py = p[L.pelvis + 1], pz = p[L.pelvis + 2];
     this.pivot.position.set(px - p[L.rootOff], py + p[L.rootOff + 1], pz + p[L.rootOff + 2]);
@@ -465,6 +475,7 @@ export class FighterModel {
       const hk = side > 0 ? L.lHand : L.rHand, ek = side > 0 ? L.lElbow : L.rElbow;
       const shoulder = t.a.set(b.shoulderW * side, 0.255, 0).applyMatrix4(chestM);
       const target = t.b.set(-p[hk], p[hk + 1], p[hk + 2]);
+      if (this.bandLimb && this.bandLimb.limb === (side > 0 ? 'lHand' : 'rHand')) target.y = Math.min(this.bandLimb.hi, Math.max(this.bandLimb.lo, target.y));
       const pole = t.c.set(-p[ek], p[ek + 1], p[ek + 2]);
       const elbow = this.solveIK(shoulder, target, b.upperArm, b.foreArm, pole, t.d);
       this.bone(arm.upper, shoulder, elbow);
@@ -480,6 +491,7 @@ export class FighterModel {
       const fk = side > 0 ? L.lFoot : L.rFoot, kk = side > 0 ? L.lKnee : L.rKnee;
       const hip = t.a.set(b.hipW * side, -0.06, 0).applyMatrix4(pelvisM);
       const ankle = t.b.set(-p[fk], p[fk + 1], p[fk + 2]);
+      if (this.bandLimb && this.bandLimb.limb === (side > 0 ? 'lFoot' : 'rFoot')) ankle.y = Math.min(this.bandLimb.hi, Math.max(this.bandLimb.lo, ankle.y));
       const pole = t.c.set(-p[kk], p[kk + 1], p[kk + 2]);
       const knee = this.solveIK(hip, ankle, b.thigh, b.shin, pole, t.d);
       this.bone(leg.thigh, hip, knee);
@@ -519,7 +531,7 @@ export class FighterModel {
 
   // World position of a limb end (for hit sparks / trails).
   limbWorld(limb, out) {
-    const map = { lHand: this.lArm.fist, rHand: this.rArm.fist, lFoot: this.lLeg.foot, rFoot: this.rLeg.foot, lKnee: this.lLeg.knee, rKnee: this.rLeg.knee, body: this.chestG };
+    const map = { lHand: this.lArm.fist, rHand: this.rArm.fist, lFoot: this.lLeg.foot, rFoot: this.rLeg.foot, lKnee: this.lLeg.knee, rKnee: this.rLeg.knee, lElbow: this.lArm.elbow, rElbow: this.rArm.elbow, body: this.chestG };
     const o = map[limb] || this.chestG;
     return o.getWorldPosition(out);
   }

@@ -23,7 +23,7 @@ const KAI_MOVES = [
   { id: 'kai_21', name: 'Cross Body Hook', cmd: '1', inString: true, level: 'mid', dmg: 13, startup: 11, active: 2, recovery: 21, block: -9, hit: 3,
     onCH: 'crumple', reach: 0.55, radius: 0.22, limb: 'lHand', anim: 'bodyHookL', sfx: 'medium', tracking: 3 },
   { id: 'kai_df1', name: 'Elbow Check', cmd: 'df+1', level: 'mid', dmg: 11, startup: 13, active: 2, recovery: 19, block: 1, hit: 6,
-    reach: 0.55, radius: 0.2, limb: 'lHand', hitPoint: [0.02, 1.3, 0.55], anim: 'elbowL', sfx: 'medium' },
+    reach: 0.55, radius: 0.2, limb: 'lElbow', hitPoint: [0.02, 1.3, 0.55], anim: 'elbowL', sfx: 'medium' },
   { id: 'kai_df2', name: 'Rising Uppercut', cmd: 'df+2', level: 'mid', dmg: 13, startup: 15, active: 2, recovery: 24, block: -13, hit: 0,
     onHit: 'launch', launch: 0.1, reach: 0.52, radius: 0.24, limb: 'rHand', hitPoint: [0.02, 1.4, 0.52], anim: 'uppercutR', sfx: 'heavy' },
   { id: 'kai_d1', name: 'Crouch Jab', cmd: 'd+1', level: 'low', dmg: 5, startup: 10, active: 2, recovery: 14, block: -5, hit: 6,

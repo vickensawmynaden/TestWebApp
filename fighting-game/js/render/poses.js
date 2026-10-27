@@ -5,10 +5,12 @@
 
 export const POSE_LAYOUT = {
   pelvis: 0, hipRot: 3, chest: 6, head: 9, lHand: 12, rHand: 15, lFoot: 18, rFoot: 21,
-  lElbow: 24, rElbow: 27, lKnee: 30, rKnee: 33, footPitch: 36, root: 38, rootOff: 41, footYaw: 44, open: 46,
+  lElbow: 24, rElbow: 27, lKnee: 30, rKnee: 33, footPitch: 36, root: 38, rootOff: 41, footYaw: 44, open: 46, plant: 48,
 };
-export const POSE_SIZE = 48;
-const SIZES = { footPitch: 2, footYaw: 2, open: 2 };
+// plant: per-foot ground-contact weight (0..1) on the animation timeline; renderers lock planted
+// feet in world space (see SkinnedFighter.lockFoot). Computed by the Animator, not authored.
+export const POSE_SIZE = 50;
+const SIZES = { footPitch: 2, footYaw: 2, open: 2, plant: 2 };
 
 export function compilePose(def, base = null) {
   const v = base ? Float32Array.from(base) : new Float32Array(POSE_SIZE);

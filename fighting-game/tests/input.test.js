@@ -219,3 +219,18 @@ test('outcomes do not depend on render rate: rendering never feeds back into the
   const base = play(0);
   for (const every of [1, 2, 4, 7]) assert.equal(play(every), base, `render every ${every} sim frames`);
 });
+
+test('animation resyncs after a round reset (fighter frame counters restart)', async () => {
+  const { Animator } = await import('../js/render/Animator.js');
+  const m = new Match({ p1: 'ren', p2: 'maya', mode: 'training' });
+  const a = new Animator('ren');
+  const f = m.world.fighters[0];
+  for (let k = 0; k < 300; k++) { m.tick([inp(0), inp(1)]); a.update(f, m.world, 0); }
+  m.resetTraining();
+  m.tick([inp(0, 5, '1'), inp(1)]);
+  for (let k = 0; k < 12; k++) { m.tick([inp(0), inp(1)]); a.update(f, m.world, 0); }
+  // after the reset the jab animates (the hand moves toward its contact pose) instead of freezing
+  const p = a.update(f, m.world, 0);
+  const stanceZ = a.stance[12 + 2];
+  assert.ok(p[12 + 2] > stanceZ + 0.15, `lead hand extended: ${p[14].toFixed(2)} vs stance ${stanceZ.toFixed(2)}`);
+});
