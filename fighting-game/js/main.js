@@ -135,6 +135,8 @@ class App {
     const items = [
       { label: 'Resume', action: () => this.resume() },
       { label: 'Dummy behaviour', hidden: () => !m.training, value: () => m.dummy.mode, adjust: (d) => { const i = DUMMY_MODES.indexOf(m.dummy.mode); m.dummy.mode = DUMMY_MODES[(i + d + DUMMY_MODES.length) % DUMMY_MODES.length]; } },
+      { label: 'Demo combo', hidden: () => !m.training || !this.demoList(m).length, value: () => this.demoList(m)[this.demoIdx % this.demoList(m).length]?.name || '', adjust: (d) => { const n = this.demoList(m).length; this.demoIdx = ((this.demoIdx || 0) + d + n) % n; } },
+      { label: 'Play combo demo', hidden: () => !m.training || !this.demoList(m).length, action: () => { const r = this.demoList(m)[(this.demoIdx || 0) % this.demoList(m).length]; m.playComboDemo(r.id); this.resume(); } },
       { label: 'P1 Rage', hidden: () => !m.training, value: () => (m.world.fighters[0].rage ? 'ON' : 'OFF'), adjust: () => m.setTrainingRage(!m.world.fighters[0].rage) },
       { label: 'HUD move list', hidden: () => !m.training, value: () => (document.getElementById('movelist').classList.contains('hidden') ? 'OFF' : 'ON'), adjust: () => this.toggleHudMoves() },
       { label: 'Reset positions', hidden: () => !m.training, action: () => { m.resetTraining(); this.resume(); } },
@@ -148,6 +150,8 @@ class App {
     ];
     this.ui.push(new MenuScreen(this, { title: reason ? 'Paused — ' + reason : 'Paused', items, overlay: true, onBack: () => this.resume() }));
   }
+
+  demoList(m) { this.demoIdx = this.demoIdx || 0; return m.world.fighters[0].def.combos || []; }
 
   toggleHudMoves() {
     const n = document.getElementById('movelist');

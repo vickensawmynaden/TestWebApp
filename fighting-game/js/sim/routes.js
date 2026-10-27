@@ -42,8 +42,10 @@ export function commandFrames(cmd) {
 }
 
 export class RouteBot {
-  constructor(route) {
+  // gate(stepIndex, self): optional hit-confirm hook; returns 'go' | 'wait' | 'stop'.
+  constructor(route, gate = null) {
     this.route = route;
+    this.gate = gate;
     this.i = 0;
     this.seq = null;          // inputs still to emit for the current step
     this.freeT = 0;           // frames the fighter has been free (for link steps with `after`)
@@ -72,6 +74,11 @@ export class RouteBot {
       return this.emit(world, inp, self);
     }
     if (!this.ready(self, st)) return st.hold ? setDir(inp, self, st.hold) : inp;
+    if (this.gate && this.i > 0) {
+      const g = this.gate(this.i, self);
+      if (g === 'stop') { this.done = true; return inp; }
+      if (g === 'wait') return inp;
+    }
     this.seq = commandFrames(st.cmd).slice();
     this.i++;
     return this.emit(world, inp, self);

@@ -1,6 +1,7 @@
 // CPU opponent and training dummy. Both produce the same screen-relative raw input a
 // controller would, so they go through the exact same command / state pipeline as players.
-import { emptyInput } from './world.js';
+import { emptyInput, PUNISH_BUFFER_FRAMES } from './world.js';
+import { RouteBot } from './routes.js';
 
 function dirInput(inp, self, d) {
   // d: numpad direction relative to self (6 = toward opponent)
@@ -62,11 +63,14 @@ export class CpuAI {
   constructor(level = 2, seed = 1234, profile = null) {
     this.level = level;           // 1 easy .. 3 hard
     this.plan = null; this.step = 0; this.stepT = 0;
+    this.route = null;            // running combo route (RouteBot) with hit-confirm gate
     this.wait = 0;
     this.seed = seed;
     this.holdDir = 5;
     this.profileName = profile;
     this.seen = [];               // delayed view of the opponent
+    this.handledSeq = -1;         // last opponent attack execution already reacted to (defence)
+    this.punishedSeq = -1;        // last opponent attack execution already punished / ignored
   }
 
   rand() { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296; }
@@ -74,7 +78,7 @@ export class CpuAI {
   setup(self) {
     const moves = self.commandMoves.filter((m) => !m.spec.special && !m.rage);
     const strikes = moves.filter((m) => m.level !== 'throw' && m.level !== 'parry');
-    const range = (m) => (m.hitPointLocal ? m.hitPointLocal[2] : m.reach) + 0.42;
+    const range = (m) => (m.hitPointLocal ? m.hitPointLocal[2] : m.reach) + 0.42 + (m.advance || 0);
     this.cat = {
       jab: strikes.filter((m) => m.cmd === '1'),
       mid: strikes.filter((m) => m.level === 'mid' && !m.onHit),
@@ -82,11 +86,12 @@ export class CpuAI {
       power: strikes.filter((m) => m.onHit || m.dmg >= 13),
       high: strikes.filter((m) => m.level === 'high'),
       throw: moves.filter((m) => m.level === 'throw'),
-      fast: strikes.filter((m) => m.startup <= 13).sort((a, b) => b.dmg - a.dmg),
       all: strikes,
     };
     this.range = range;
     this.maxRange = Math.max(...strikes.map(range));
+    // Combo routes this fighter can open with from neutral (counter-hit routes need a read).
+    this.routes = (self.def.combos || []).filter((r) => r.kind !== 'ch');
     const fromDef = PROFILES[self.def.ai] ? self.def.ai : 'balanced';
     this.profile = PROFILES[this.profileName && PROFILES[this.profileName] ? this.profileName : fromDef];
     this.lv = LEVELS[this.level] || LEVELS[2];
@@ -98,24 +103,66 @@ export class CpuAI {
 
   // Weighted pick among moves that reach the current distance.
   pickMove(list, dist) {
-    const inRange = list.filter((m) => this.range(m) >= dist);
-    const pool = inRange.length ? inRange : [];
+    const pool = list.filter((m) => this.range(m) >= dist);
     return pool.length ? pool[Math.floor(this.rand() * pool.length)] : null;
   }
 
-  // Opponent as seen `react` frames ago (reaction delay).
-  observe(opp) {
-    this.seen.push({ state: opp.state, move: opp.move, mf: opp.mf, result: opp.moveResult, moveHit: opp.moveHit });
+  // Opponent as seen `react` frames ago (reaction delay). Every decision reads this snapshot,
+  // never the live opponent, so the CPU cannot react faster than its level allows.
+  observe(opp, self = null) {
+    this.seen.push({ at: self ? self.frameCount : 0, state: opp.state, move: opp.move, mf: opp.mf, result: opp.moveResult, moveHit: opp.moveHit,
+      seq: opp.attackSeq, x: opp.pos.x, z: opp.pos.z, y: opp.pos.y, ko: opp.ko });
     const delay = this.lv.react + Math.floor(this.rand() * 4);
     while (this.seen.length > delay) this.seen.shift();
     return this.seen[0];
   }
 
+  // Hit-confirm for combo routes: the follow-up after `confirmAt` hits is only entered once the
+  // CPU has seen its own hit land (with its reaction delay); a blocked or missed opener stops it.
+  confirmGate(route, world) {
+    const need = route.kind === 'string' ? route.gapAfter : route.kind === 'true' ? 99 : 1;
+    return (i, self) => {
+      if (i < need) return 'go';
+      if (self.moveResult === 'block' || (self.moveResult === null && self.state === 'attack' && self.mf > self.move.startup + self.move.active)) return 'stop';
+      if (self.moveResult === 'hit' || self.moveResult === 'ch' || world.opponent(self).combo.active) {
+        if (this.contactFrame === undefined) this.contactFrame = world.frame;
+        return world.frame - this.contactFrame >= this.lv.react ? 'go' : 'wait';
+      }
+      return 'wait';
+    };
+  }
+
+  startRoute(route, world) {
+    this.contactFrame = undefined;
+    this.route = new RouteBot(route, this.confirmGate(route, world));
+    this.routeDef = route;
+  }
+
+  // Guaranteed punisher: fastest-enough, highest-damage option that reaches.
+  punisher(frames, dist, self) {
+    const opts = [];
+    for (const r of this.routes) {
+      const opener = self.commandMoves.find((m) => m.cmd === r.steps[0].cmd);
+      // routes need the opener well inside its range so the follow-ups still reach after pushback
+      if (opener) opts.push({ startup: opener.startup, range: this.range(opener) - 0.15, value: r.damage, route: r });
+    }
+    for (const m of this.cat.all) opts.push({ startup: m.startup, range: this.range(m), value: m.dmg, move: m });
+    // two frames of margin: the move starts the frame after the CPU becomes free
+    const ok = opts.filter((o) => o.startup <= frames - 2 && o.range >= dist);
+    ok.sort((a, b) => b.value - a.value);
+    return ok[0] || null;
+  }
+
   input(world, self) {
     if (!this.ready) this.setup(self);
     const opp = world.opponent(self);
-    const seen = this.observe(opp);
+    const seen = this.observe(opp, self);
     const inp = emptyInput();
+    if (this.route) {
+      const r = this.route.input(world, self);
+      if (this.route.done) this.route = null;
+      return r;
+    }
     if (this.plan) {
       const st = this.plan[this.step];
       dirInput(inp, self, st.d);
@@ -126,47 +173,60 @@ export class CpuAI {
     }
     if (self.ko) return inp;
     const P = this.profile, cat = this.cat;
-    const dist = Math.hypot(opp.pos.x - self.pos.x, opp.pos.z - self.pos.z);
+    const dist = Math.hypot(seen.x - self.pos.x, seen.z - self.pos.z);
     const mistake = this.rand() < this.lv.mistake;
 
     if (self.state === 'down') {
       if (this.rand() < 0.08) this.startPlan(MOVE_PLANS.getup);
       return inp;
     }
-    // ---- Defence: react (late) to an attack starting up.
+    // ---- Punish: a blocked unsafe attack or a whiff, judged by frames and range. The CPU knows
+    // the result once its delayed view shows it; frames still available = the opponent's recovery
+    // left in that view, minus the observation delay, minus the CPU's own remaining blockstun.
+    const recovering = seen.state === 'attack' && seen.move && seen.move.level !== 'throw' && (seen.result === 'block' || seen.mf >= seen.move.startup + seen.move.active);
+    if (recovering && this.punishedSeq !== seen.seq && !mistake) {
+      const m = seen.move;
+      // simulation frames since the observation (frame counters pause during hit-stop, like move frames)
+      const delay = self.frameCount - seen.at;
+      const ownStun = self.state === 'block' ? Math.max(0, self.stun - self.t) : self.isNeutral() ? 0 : 99;
+      const frames = (seen.result === 'block' || !seen.moveHit) ? m.total - seen.mf - delay - ownStun : -99;
+      const tries = (P.punish && seen.result === 'block') || (P.whiff && !seen.moveHit) || this.rand() < 0.35 + 0.15 * this.level;
+      // Still in blockstun beyond the punish-buffer window: keep guarding and decide when it opens.
+      if (frames >= 8 && ownStun > PUNISH_BUFFER_FRAMES - 1) { inp.guard = true; return inp; }
+      if (frames >= 8) {
+        this.punishedSeq = seen.seq;
+        if (tries) {
+          const p = this.punisher(frames, dist, self);
+          if (p) { if (p.route) this.startRoute(p.route, world); else this.doMove(p.move); return inp; }
+          if (P.whiff && frames >= 20 && dist < this.maxRange + 0.8) { this.startPlan(MOVE_PLANS.dash); return inp; }
+        }
+      }
+    }
+    // ---- Defence: react (late) to each attack execution once.
     const threat = seen.state === 'attack' && seen.move && seen.move.level !== 'throw' && seen.mf < seen.move.startup + seen.move.active && dist < 2.2;
     if (threat && (self.isNeutral() || self.state === 'block')) {
-      if (this.blockFor !== seen.move) {
-        this.blockFor = seen.move;
+      if (this.handledSeq !== seen.seq) {
+        this.handledSeq = seen.seq;
         this.blockOk = !mistake && this.rand() < P.block + 0.1 * this.level;
         this.sideOk = P.wSide > 1 && !seen.move.tracking && this.rand() < 0.15 * P.wSide;
+        // Leila: interrupt a slow startup with Check Hook (decided once per execution, from the delayed view).
+        this.hookOk = P.punish && seen.mf < seen.move.startup - 8 && dist < 1.1 && this.rand() < 0.3 * this.level;
+      }
+      if (this.hookOk) {
+        const hook = self.moveMap.get(`${self.def.id}_b2`);
+        this.hookOk = false;
+        if (hook && hook.startupBonus) { this.doMove(hook); return inp; }
       }
       if (this.blockOk) {
         if (this.sideOk) { this.startPlan(this.rand() < 0.5 ? MOVE_PLANS.ssUp : MOVE_PLANS.ssDown); return inp; }
         if (seen.move.level === 'low') return dirInput(inp, self, 1);
         inp.guard = true; return inp;
       }
-      // Leila: interrupt the startup with Check Hook.
-      if (P.punish && opp.state === 'attack' && opp.mf < opp.move.startup - 8 && dist < 1.1) {
-        const hook = self.moveMap.get(`${self.def.id}_b2`);
-        if (hook && hook.startupBonus && this.rand() < 0.3 * this.level) { this.doMove(hook); return inp; }
-      }
     }
     if (!self.isNeutral() && self.state !== 'block') return inp;
     if (this.wait > 0) { this.wait--; if (this.holdGuard) inp.guard = true; return this.holdDir === 5 ? inp : dirInput(inp, self, this.holdDir); }
     this.holdGuard = false;
 
-    // ---- Punish: opponent recovering from a blocked or missed attack.
-    if (seen.state === 'attack' && seen.move && seen.mf >= seen.move.startup + seen.move.active && !mistake) {
-      const whiffed = !seen.moveHit;
-      const minus = seen.result === 'block' ? -(seen.move.block ?? 0) : 0;
-      const want = (P.punish && seen.result === 'block' && minus >= 8) || (P.whiff && whiffed) || (whiffed && this.rand() < 0.25) || (minus >= 12 && this.rand() < 0.4);
-      if (want) {
-        const m = (P.whiff ? cat.mid.concat(cat.power) : cat.fast).filter((x) => this.range(x) >= dist).sort((a, b) => b.dmg - a.dmg)[0];
-        if (m) { this.doMove(m); return inp; }
-        if (P.whiff && dist < this.maxRange + 0.8) { this.startPlan(MOVE_PLANS.dash); return inp; }
-      }
-    }
     // ---- Spacing
     const r = this.rand();
     if (dist > P.dist + 0.45) {
@@ -183,11 +243,18 @@ export class CpuAI {
       this.holdDir = 5; this.holdGuard = true; this.wait = 8 + Math.floor(this.rand() * 14);
       inp.guard = true; return inp;
     }
-    // ---- Offence: weighted choice of category, then a move that reaches.
-    const opts = [['jab', P.wJab], ['mid', P.wMid], ['low', P.wLow], ['power', P.wPower], ['throw', P.wThrow], ['side', P.wSide]];
-    let total = opts.reduce((a, [, w]) => a + w, 0), pick = this.rand() * total, choice = 'jab';
+    // ---- Offence: weighted choice of category, then a move that reaches. Higher levels open
+    // with authored combo routes (hit-confirmed) more often.
+    const opts = [['jab', P.wJab], ['mid', P.wMid], ['low', P.wLow], ['power', P.wPower], ['throw', P.wThrow], ['side', P.wSide], ['combo', this.routes.length ? (1 + this.level) * (1 - P.idle) : 0]];
+    const total = opts.reduce((a, [, w]) => a + w, 0);
+    let pick = this.rand() * total, choice = 'jab';
     for (const [k, w] of opts) { if ((pick -= w) <= 0) { choice = k; break; } }
     if (mistake) choice = ['jab', 'mid', 'low', 'power', 'side'][Math.floor(this.rand() * 5)];
+    if (choice === 'combo') {
+      const usable = this.routes.filter((rt) => { const o = self.commandMoves.find((m) => m.cmd === rt.steps[0].cmd); return o && this.range(o) - 0.15 >= dist; });
+      if (usable.length) { this.startRoute(usable[Math.floor(this.rand() * usable.length)], world); return inp; }
+      choice = 'jab';
+    }
     if (choice === 'side') { this.startPlan(this.rand() < 0.5 ? MOVE_PLANS.ssUp : MOVE_PLANS.ssDown); return inp; }
     if (choice === 'throw') {
       if (dist <= 1.0) { this.doMove(cat.throw[0]); return inp; }
@@ -200,28 +267,107 @@ export class CpuAI {
   }
 }
 
-export const DUMMY_MODES = ['stand', 'crouch', 'guard all', 'jump', 'cpu'];
+export const DUMMY_MODES = ['stand guard', 'no guard', 'crouch guard', 'guard all', 'guard after first hit', 'random guard',
+  'counter hit', 'jump', 'record', 'playback', 'punish drill', 'cpu'];
 
+// Practice dummy. Guard modes may read the attacker's attack level directly: the dummy is a
+// practice tool, not an opponent. Recording stores fighter-relative directions so playback works
+// from either side.
 export class TrainingDummy {
-  constructor() { this.mode = 'stand'; this.cpu = new CpuAI(2, 99); this.t = 0; }
-  input(world, self) {
+  constructor() {
+    this.mode = 'stand guard'; this.cpu = new CpuAI(2, 99); this.t = 0;
+    this.recording = []; this.playT = 0; this.seed = 7;
+    this.guardSeq = -1; this.guardThis = false;
+    this.drill = { phase: 'approach', t: 0, move: null, seq: -1 };
+  }
+
+  rand() { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296; }
+
+  // Guard the attacker's current attack correctly (crouch for lows, stand guard otherwise).
+  guardFor(inp, self, opp) {
+    if (opp.state === 'attack' && opp.move && opp.move.level === 'low') return dirInput(inp, self, 1);
+    inp.guard = true; return inp;
+  }
+
+  // p1raw: player 1's raw input, used while recording (the player controls the dummy).
+  input(world, self, p1raw = null) {
     const opp = world.opponent(self);
     const inp = emptyInput();
     this.t++;
+    if (this.mode !== this.lastMode) {   // entering record starts a fresh recording; playback restarts
+      if (this.mode === 'record') this.recording = [];
+      if (this.mode === 'playback') this.playT = 0;
+      this.lastMode = this.mode;
+    }
+    self.noGuard = this.mode === 'no guard' || this.mode === 'guard after first hit' || this.mode === 'random guard' || this.mode === 'counter hit';
+    world.trainingCounterAll = this.mode === 'counter hit';
+    if (this.mode !== 'record' && this.mode !== 'playback' && this.mode !== 'cpu' && this.mode !== 'punish drill' && self.state === 'down') {
+      return this.t % 30 === 0 ? buttons(inp, '1') : inp;
+    }
     switch (this.mode) {
-      case 'crouch': return dirInput(inp, self, 1);
-      case 'guard all': {
-        // Reads the incoming attack level: crouch for lows, stand for everything else.
-        if (opp.state === 'attack' && opp.move && opp.move.level === 'low') return dirInput(inp, self, 1);
-        if (self.state === 'down') return (this.t % 30 === 0) ? buttons(inp, '1') : inp;
-        inp.guard = true;            // stand guard in place (holding back would walk away)
+      case 'no guard': case 'counter hit': return inp;
+      case 'crouch guard': return dirInput(inp, self, 1);
+      case 'guard all': return this.guardFor(inp, self, opp);
+      case 'guard after first hit':
+        // Takes the first hit of a combo unguarded, then guards on every legal frame.
+        if (self.combo.active || (this.t - (this.lastHitT ?? -99)) < 40) {
+          if (self.combo.active) this.lastHitT = this.t;
+          self.noGuard = false;
+          return this.guardFor(inp, self, opp);
+        }
+        return inp;
+      case 'random guard':
+        if (opp.attackSeq !== this.guardSeq) { this.guardSeq = opp.attackSeq; this.guardThis = this.rand() < 0.5; }
+        if (this.guardThis) { self.noGuard = false; return this.guardFor(inp, self, opp); }
+        return inp;
+      case 'jump': return (this.t % 50 < 12) ? dirInput(inp, self, 8) : inp;
+      case 'cpu': return this.cpu.input(world, self);
+      case 'record': {
+        // The player drives the dummy; inputs are stored relative to the dummy's facing.
+        if (!p1raw) return inp;
+        const fwdRight = self.screenSide > 0;
+        const f = fwdRight ? p1raw.right : p1raw.left, b = fwdRight ? p1raw.left : p1raw.right;
+        const d = 5 + (f ? 1 : 0) - (b ? 1 : 0) + 3 * ((p1raw.up ? 1 : 0) - (p1raw.down ? 1 : 0));
+        if (this.recording.length < 600) this.recording.push({ d, b: ['1', '2', '3', '4'].filter((c) => p1raw['b' + c]).join(''), g: !!p1raw.guard });
+        dirInput(inp, self, d);
+        for (const c of this.recording[this.recording.length - 1]?.b || '') inp['b' + c] = true;
+        inp.guard = p1raw.guard;
         return inp;
       }
-      case 'jump': return (this.t % 50 < 2) ? dirInput(inp, self, 8) : (this.t % 50 < 12 ? dirInput(inp, self, 8) : inp);
-      case 'cpu': return this.cpu.input(world, self);
-      default:
-        if (self.state === 'down' && this.t % 40 === 0) return buttons(inp, '1');
+      case 'playback': {
+        if (!this.recording.length) return inp;
+        const r = this.recording[this.playT++ % this.recording.length];
+        dirInput(inp, self, r.d);
+        for (const c of r.b) inp['b' + c] = true;
+        inp.guard = r.g;
         return inp;
+      }
+      case 'punish drill': return this.punishDrill(world, self, opp, inp);
+      default: return inp;   // 'stand guard': standing still guards highs and mids
     }
+  }
+
+  // Walks in, throws out an attack that is unsafe on block, then stays passive so the player can
+  // punish it; the match reports PUNISHED / MISSED.
+  punishDrill(world, self, opp, inp) {
+    const d = this.drill;
+    d.t++;
+    if (!this.unsafe) this.unsafe = self.commandMoves.filter((m) => m.level !== 'throw' && m.level !== 'parry' && !m.spec.motion && !m.rage && m.block !== undefined && m.block <= -10);
+    const dist = Math.hypot(opp.pos.x - self.pos.x, opp.pos.z - self.pos.z);
+    if (d.phase === 'approach') {
+      if (!self.isNeutral()) return inp;
+      if (dist > 1.1) return dirInput(inp, self, 6);
+      if (d.t > 20) {
+        d.move = this.unsafe[Math.floor(this.rand() * this.unsafe.length)];
+        d.phase = 'attack'; d.t = 0;
+        const fr = planForMove(d.move)[0];
+        dirInput(inp, self, fr.d); buttons(inp, fr.b || '');
+        d.seq = self.attackSeq + 1;
+      }
+      return inp;
+    }
+    if (d.phase === 'attack' && self.isNeutral() && d.t > 10) { d.phase = 'rest'; d.t = 0; }
+    if (d.phase === 'rest' && d.t > 50) { d.phase = 'approach'; d.t = 0; }
+    return inp;
   }
 }

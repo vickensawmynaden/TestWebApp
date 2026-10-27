@@ -20,7 +20,7 @@ for (const [id, routes] of Object.entries(COMBOS)) {
         const g = runRoute(id, r, { defender: 'guardAfter' });
         assert.equal(g.hits, r.hits, `earliest guard cannot block it: ${g.sequence.join(' > ')} / ${g.blocks} blocked`);
         // Robust to spacing and to every defender character.
-        for (const dist of [0.85, 1.0, 1.15]) assert.equal(runRoute(id, r, { defender: 'guardAfter', dist }).hits, r.hits, `at ${dist} m`);
+        for (const dist of [0.7, 0.85, 1.0]) assert.equal(runRoute(id, r, { defender: 'guardAfter', dist }).hits, r.hits, `at ${dist} m`);
         for (const defId of ROSTER) assert.equal(runRoute(id, r, { defender: 'guardAfter', defId }).hits, r.hits, `vs ${defId}`);
       }
       if (r.kind === 'juggle') {

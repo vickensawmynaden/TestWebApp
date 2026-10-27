@@ -1,7 +1,7 @@
 // Combo validation harness: runs an authored route with fighter 0 against a scripted defender.
 //
 // Defenders:
-//   open        never guards: walks forward (standing still guards automatically in this game)
+//   open        never guards: stands still with guarding disabled (like the practice 'no guard' dummy)
 //   guardAfter  unguarded until the route's first hit lands, then guards correctly (crouch for lows,
 //               stand guard for highs / mids) on every frame it legally can: the earliest-guard
 //               test for true combos
@@ -29,7 +29,9 @@ export function runRoute(attId, route, { defender = 'open', defId = 'ren', dist 
     const di = emptyInput();
     // counter-hit bait: the defender starts a slow attack (default Ren's b+4, i20) on frame 0
     if (defender === 'ch' && k === (route.chAt || 0)) { const fr = commandFrames(route.chBait || 'b+4')[0]; setDir(di, D, fr.d); for (const c of fr.b) di['b' + c] = true; }
-    if (defender === 'open' || ((defender === 'guardAfter' || defender === 'jab') && !firstHit)) setDir(di, D, 6);
+    // Unguarded defenders stand still with guarding disabled (practice-dummy "no guard"),
+    // so spacing is exactly the route's start distance.
+    D.noGuard = defender === 'open' || ((defender === 'guardAfter' || defender === 'jab') && !firstHit);
     const guarding = defender === 'guardAll' || ((defender === 'guardAfter' || defender === 'ch') && firstHit);
     if (guarding) {
       const lvl = A.state === 'attack' && A.move ? A.move.level : 'mid';

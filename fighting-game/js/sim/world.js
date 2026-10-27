@@ -14,6 +14,7 @@ export const ATTACK_BUFFER_FRAMES = 8;   // late-recovery frames in which the ne
 export const PUNISH_BUFFER_FRAMES = 6;   // last blockstun frames in which a punish may be entered
 export const BUFFER_TTL = 10;            // a buffered attack fires within this many frames or is dropped
 export const WALL_STUN_MAX = 60;
+export const JUGGLE_DIST = 0.8;          // launchers / fillers drift the airborne opponent toward this distance
 export const HIT_PUSH = 0.03;
 export const BLOCK_PUSH = 0.035;         // base block pushback speed (~0.25 m)            // base standing-hit pushback speed (decays by 0.86 per frame, ~0.21 m)         // wall-splat stun can be extended by hits, never beyond this
 // States that interrupt the fighter: queued / buffered attacks are dropped and every input entered
@@ -36,6 +37,7 @@ export class World {
     this.koFighter = null;
     this.frozen = false;            // true during intros / round transitions: no control
     this.trainingInfinite = false;
+    this.trainingCounterAll = false;
     this.resetPositions();
   }
 
@@ -343,6 +345,7 @@ export class World {
   }
 
   computeGuard(f) {
+    if (f.noGuard) { f.guard = null; return; }   // practice dummy: never guards
     const d = f.dir;
     const crouchDir = d === 1 || d === 2 || d === 3;
     switch (f.state) {
@@ -495,6 +498,7 @@ export class World {
   }
 
   isCounterState(d) {
+    if (this.trainingCounterAll && d.index === 1 && !this.inCombo(d)) return true;   // practice: every first hit is a counter hit
     return d.state === 'attack' && d.move.level !== 'parry' && d.mf < d.move.startup + d.move.active;
   }
 
@@ -593,7 +597,9 @@ export class World {
       if (d.combo.terminal) lift = 0;
       d.vel.y = d.combo.terminal ? Math.min(d.vel.y, 0) : Math.max(d.vel.y * 0.3, lift * Math.pow(0.93, d.combo.juggle));
       d.juggleGravity = 1 + 0.1 * d.combo.juggle + (d.combo.terminal ? 0.4 : 0);
-      const carry = (m.push || 0.4) * (role === 'finisher' ? 0.09 : 0.05);
+      // Launchers and fillers drift the airborne opponent toward the juggle distance so routes do
+      // not depend on where the launcher connected; finishers carry them away.
+      const carry = role === 'finisher' ? (m.push || 0.4) * 0.09 : this.juggleDrift(a, d);
       d.knockV.x = away.x * carry; d.knockV.z = away.z * carry;
       if (reaction === 'wallsplat' && !d.combo.wallUsed) { d.knockV.x = away.x * 0.12; d.knockV.z = away.z * 0.12; d.wallsplatPending = true; }
       if (role === 'finisher') d.combo.terminal = true;
@@ -602,7 +608,8 @@ export class World {
       d.vel.y = reaction === 'launch' ? (m.launch || 0.1) : 0.07;
       if (d.combo.juggle === 0) d.combo.juggle = 1;
       d.juggleGravity = 1;
-      d.knockV.x = away.x * 0.007; d.knockV.z = away.z * 0.007;
+      const drift = reaction === 'launch' ? this.juggleDrift(a, d) : 0.007;
+      d.knockV.x = away.x * drift; d.knockV.z = away.z * drift;
       if (reaction === 'launch') this.emit('launch', { fighter: d.index });
     } else if (reaction === 'knockdown') {
       this.setState(d, 'air');
@@ -637,6 +644,13 @@ export class World {
     this.emit(counter ? 'counter' : 'hit', { attacker: a.index, defender: d.index, pos: hitPos, heavy, dmg, sfx: m.sfx, level: lvl, combo: d.combo.hits, reaction, move: m.id, startupCatch });
     if (heavy) this.emit('shake', { amount: m.rage ? 1.2 : counter ? 0.6 : 0.4 });
     if (d.hp <= 0) this.doKO(d, a);
+  }
+
+  // Horizontal speed (along "away") that moves an airborne opponent toward JUGGLE_DIST from the
+  // attacker over the next ~30 frames (knock velocity decays by 0.985 per frame).
+  juggleDrift(a, d) {
+    const dist = Math.hypot(d.pos.x - a.pos.x, d.pos.z - a.pos.z);
+    return Math.max(-0.012, Math.min(0.006, (JUGGLE_DIST - dist) / 26));
   }
 
   doKO(d, a) {

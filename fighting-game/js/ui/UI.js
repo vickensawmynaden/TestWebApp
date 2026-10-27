@@ -545,7 +545,12 @@ class HUD {
       const adv = info.result === 'block' ? info.display.block : info.result === 'ch' ? (info.onCH || info.display.hit) : info.result === 'hit' ? info.display.hit : '—';
       txt += `Last move : ${info.name} (${info.cmd})\nStartup   : i${info.startup}   Level: ${info.level}\nResult    : ${info.result.toUpperCase()}   Adv: ${adv}\n`;
     } else txt += 'Last move : —\n\n\n';
-    txt += `Combo     : ${d.combo.hits} hits / ${d.combo.dmg} dmg\nP1 state  : ${f.state}${f.move ? ' ' + f.move.name + ' f' + f.mf : ''}\nDummy     : ${d.state}`;
+    txt += `Combo     : ${d.combo.hits} hits / ${d.combo.dmg} dmg${d.combo.terminal ? ' (finished)' : ''}\nP1 state  : ${f.state}${f.move ? ' ' + f.move.name + ' f' + f.mf : ''}\nDummy     : ${d.state}`;
+    const dm = match.dummy;
+    if (dm.mode === 'record') txt += `\nRECORDING : you control the dummy (${dm.recording.length}/600 frames)`;
+    else if (dm.mode === 'playback') txt += `\nPLAYBACK  : ${dm.recording.length ? dm.recording.length + ' frames, looping' : 'nothing recorded — pick "record" first'}`;
+    else if (dm.mode === 'punish drill') txt += `\nDRILL     : block the dummy's attack, then punish it (${match.punishes || 0} punished)`;
+    if (match.demo) txt += `\nDEMO      : ${match.demo.route.name} (${match.demo.route.notation})`;
     $('#tp-info').textContent = txt;
     $('#tp-dummy').textContent = match.dummy.mode;
   }
