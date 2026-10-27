@@ -44,6 +44,13 @@ Then open **http://localhost:8080** in the browser.
 > import maps require HTTP. Any static server is fine, for example `python3 -m http.server 8080`
 > run inside `fighting-game/`.
 
+### Deploying to Vercel
+
+The game is a static site, so no build is needed. In Vercel, import the GitHub repository and set
+**Root Directory** to `fighting-game`. `vercel.json` already sets no install/build step and
+serves the folder as-is (`outputDirectory: "."`). This matters: without it Vercel would serve
+only the `public/` folder. From a terminal: `cd fighting-game && npx vercel --prod`.
+
 Run the tests:
 
 ```bash
