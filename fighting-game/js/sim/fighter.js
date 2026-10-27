@@ -108,7 +108,7 @@ export class Fighter {
       case 'crouch': return 'crouch';
       case 'block': return this.guard === 'crouch' ? 'crouch' : 'stand';
       case 'hit': return this.hitLevel === 'low-crouch' ? 'crouch' : 'stand';
-      case 'crumple': return this.t > 30 ? 'down' : 'crouch';
+      case 'crumple': return this.t > 44 ? 'down' : 'crouch';   // hittable (follow-ups launch) for 44 of its 52 frames
       case 'getup': return this.t < 8 ? 'crouch' : 'stand';
       case 'attack': {
         const m = this.move;

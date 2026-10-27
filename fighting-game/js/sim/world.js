@@ -279,13 +279,21 @@ export class World {
     if (m.stringSpecs.length && !f.queued && f.press) {
       for (const s of m.stringSpecs) {
         if (f.mf < s.window[0] || f.mf > s.window[1]) continue;
-        if (commandMatches(s.spec, f.buf, { minN: f.minInputN, exactDir: true })) { f.queued = { move: f.moveMap.get(s.to), s, n: f.inputN }; break; }
+        if (commandMatches(s.spec, f.buf, { minN: f.minInputN }) && !this.directionalOverride(f, s)) {
+          // The ordinary command move for the same input is kept as a fallback when the follow-up's
+          // condition (parent result, opponent airborne / grounded) fails at execution.
+          const fb = this.findMove(f, f.commandMoves);
+          f.queued = { move: f.moveMap.get(s.to), s, n: f.inputN, fallback: fb, frame: this.frame };
+          break;
+        }
       }
     }
     if (f.queued && f.mf >= f.queued.s.exec) {
       const q = f.queued;
       if (this.stringAllowed(f, q.s)) { this.recordMoveInfo(f); this.startMove(f, q.move); f.chainFrom = m.id; f.mf = 0; return; }
-      f.queued = null;   // condition failed: the follow-up does not come out
+      // Condition failed: the follow-up does not come out; its input may still buffer the ordinary move.
+      if (q.fallback && q.fallback.level !== 'throw') f.buffered = { move: q.fallback, n: q.n, frame: q.frame, expires: Math.max(this.frame, q.frame) + BUFFER_TTL + (m.total - f.mf) };
+      f.queued = null;
     }
     // Buffer the next attack during late recovery.
     if (!f.queued && f.press && f.mf > m.total - ATTACK_BUFFER_FRAMES && m.level !== 'throw') this.bufferAttack(f);
@@ -308,6 +316,13 @@ export class World {
       if (m.level === 'parry' && f.parried) { f.parried = false; }
       this.toNeutral(f);
     }
+  }
+
+  // A follow-up written without a direction yields when a directional command move matches the
+  // input exactly (1 then f+2 is the f+2 move, not the 1,2 string); otherwise any direction works.
+  directionalOverride(f, s) {
+    if (s.spec.dir || f.dir === 5) return false;
+    return f.commandMoves.some((m) => m.spec.dir && !m.spec.motion && m.spec.buttons === s.spec.buttons && commandMatches(m.spec, f.buf, { minN: f.minInputN }));
   }
 
   stringAllowed(f, s) {

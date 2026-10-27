@@ -6,14 +6,14 @@
 //               stand guard for highs / mids) on every frame it legally can: the earliest-guard
 //               test for true combos
 //   guardAll    guards correctly from the start (blocked-string tests)
-//   ch          starts a slow attack on frame 0 so the opener lands as a counter hit, then guards
+//   ch          starts a slow attack (route.chBait, default b+4 = Ren's i20 heel) on frame 0 so the opener lands as a counter hit, then guards
 //               like guardAfter
 //   jab         after the first hit, presses jab on every frame it is free (finds gaps on hit)
 //   blockDuck   guards, and after blocking `route.jabAfter` hits holds down (ducks highs)
 //   blockJab    guards, and after blocking `route.jabAfter` hits presses jab (finds gaps on block)
 import { World, emptyInput } from '../js/sim/world.js';
 import { CHARACTERS } from '../js/sim/characters.js';
-import { RouteBot, setDir } from '../js/sim/routes.js';
+import { RouteBot, setDir, commandFrames } from '../js/sim/routes.js';
 
 export function runRoute(attId, route, { defender = 'open', defId = 'ren', dist = null, frames = 400, near = null } = {}) {
   const w = new World(CHARACTERS[attId], CHARACTERS[defId]);
@@ -27,7 +27,8 @@ export function runRoute(attId, route, { defender = 'open', defId = 'ren', dist 
   for (let k = 0; k < frames; k++) {
     const ai = bot.input(w, A);
     const di = emptyInput();
-    if (defender === 'ch' && k === 0) di.b4 = true;
+    // counter-hit bait: the defender starts a slow attack (default Ren's b+4, i20) on frame 0
+    if (defender === 'ch' && k === (route.chAt || 0)) { const fr = commandFrames(route.chBait || 'b+4')[0]; setDir(di, D, fr.d); for (const c of fr.b) di['b' + c] = true; }
     if (defender === 'open' || ((defender === 'guardAfter' || defender === 'jab') && !firstHit)) setDir(di, D, 6);
     const guarding = defender === 'guardAll' || ((defender === 'guardAfter' || defender === 'ch') && firstHit);
     if (guarding) {

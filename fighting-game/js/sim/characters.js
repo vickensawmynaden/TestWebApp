@@ -87,6 +87,11 @@ function basics(id, o = {}) {
   ];
 }
 
+// Adds string follow-ups to moves built by basics(): { moveId: [strings] }.
+function withStrings(moves, table) {
+  return moves.map((m) => (table[m.id] ? { ...m, strings: table[m.id] } : m));
+}
+
 function standardThrow(id, o = {}) {
   return { id: `${id}_t`, name: o.name || 'Clinch Throw', cmd: '1+3', level: 'throw', dmg: o.dmg || STANDARD_THROW_DMG,
     startup: o.startup || 12, active: 2, recovery: 28, breakMask: B1, reach: 0.95, anim: 'throwGrab', throwAnim: o.throwAnim || 'shoulderThrow', sfx: 'heavy', special: !!o.name };
@@ -95,7 +100,13 @@ function standardThrow(id, o = {}) {
 const REN_MOVES = [
   { id: 'ren_1', name: 'Anchor Jab', cmd: '1', level: 'high', dmg: 5, startup: 10, active: 2, recovery: 14, hitstun: 21, blockstun: 16,
     reach: 0.66, radius: 0.17, limb: 'lHand', anim: 'renJab', sfx: 'light', signature: true,
-    strings: [{ cmd: '2', to: 'ren_12' }] },
+    strings: [{ cmd: '2', to: 'ren_12' }, { cmd: 'f+2', to: 'ren_1f2', target: 'airborne' }] },
+  // Juggle-only extension: 1,f+2,b+4 on an airborne opponent (filler palm, finisher heel).
+  { id: 'ren_1f2', name: 'Rising Harbor Palm', cmd: 'f+2', inString: true, level: 'mid', dmg: 9, startup: 13, active: 3, recovery: 20, hitstun: 24, blockstun: 14,
+    advance: 0.3, reach: 0.7, radius: 0.24, limb: 'rHand', anim: 'renPalm', sfx: 'medium', role: 'filler',
+    strings: [{ cmd: 'b+4', to: 'ren_1f2b4', target: 'airborne' }] },
+  { id: 'ren_1f2b4', name: 'Crescent Drop', cmd: 'b+4', inString: true, level: 'mid', dmg: 12, startup: 16, active: 3, recovery: 28, hitstun: 0, blockstun: 12,
+    onHit: 'knockdown', advance: 0.25, reach: 0.85, radius: 0.28, limb: 'rFoot', anim: 'renCrescent', sfx: 'heavy', role: 'finisher' },
   // 1,2 is a natural combo (the cross arrives inside the jab's hitstun); the b+4 heel after it
   // arrives after the cross's hitstun ends, so it can be blocked (or ducked: it is high).
   { id: 'ren_12', name: 'Anchor Cross', cmd: '2', inString: true, level: 'high', dmg: 8, startup: 11, active: 2, recovery: 17, hitstun: 22, blockstun: 13,
@@ -128,6 +139,8 @@ const MAYA_MOVES = [
   ...basics('maya', { spd: -1, dmg: 0.85, anim3: 'mayaTeep', anim4: 'mayaRound' }),
   { id: 'maya_f1', name: 'Twin-Step Elbow', cmd: 'f+1', level: 'mid', dmg: 8, startup: 12, active: 2, recovery: 17, hitstun: 22, blockstun: 15,
     advance: 0.35, reach: 0.5, radius: 0.2, limb: 'lElbow', hitPoint: [0.0, 1.25, 0.52], anim: 'mayaElbow', sfx: 'medium', signature: true },
+  { id: 'maya_df4', name: 'Rising Knee', cmd: 'df+4', level: 'mid', dmg: 11, startup: 15, active: 3, recovery: 25, hitstun: 0, blockstun: 13,
+    onHit: 'launch', launch: 0.1, advance: 0.2, reach: 0.48, radius: 0.26, limb: 'rKnee', hitPoint: [0.05, 1.1, 0.48], anim: 'mayaKnee', sfx: 'heavy' },
   { id: 'maya_d4', name: 'Coral Low Kick', cmd: 'd+4', level: 'low', dmg: 6, startup: 13, active: 2, recovery: 18, hitstun: 20, blockstun: 11,
     reach: 0.8, radius: 0.22, limb: 'rFoot', anim: 'mayaLowKick', sfx: 'medium', signature: true },
   { id: 'maya_f4', name: 'Breaker Knee', cmd: 'f+4', level: 'mid', dmg: 13, startup: 16, active: 3, recovery: 24, hitstun: 0, blockstun: 14,
@@ -137,25 +150,47 @@ const MAYA_MOVES = [
 
 const VIKTOR_MOVES = [
   { id: 'vik_1', name: 'Hammer Knuckle', cmd: '1', level: 'high', dmg: 8, startup: 12, active: 2, recovery: 18, hitstun: 24, blockstun: 17,
-    reach: 0.68, radius: 0.2, limb: 'lHand', anim: 'vikKnuckle', sfx: 'medium', signature: true },
+    reach: 0.68, radius: 0.2, limb: 'lHand', anim: 'vikKnuckle', sfx: 'medium', signature: true,
+    strings: [{ cmd: '2', to: 'vik_12' }] },
+  // 1,2: natural combo ending in a knockdown hook (beginner combo).
+  { id: 'vik_12', name: 'Foundry Hook', cmd: '2', inString: true, level: 'high', dmg: 11, startup: 13, active: 2, recovery: 24, hitstun: 0, blockstun: 12,
+    onHit: 'knockdown', advance: 0.15, reach: 0.68, radius: 0.22, limb: 'rHand', anim: 'hookR', sfx: 'heavy' },
   ...basics('vik', { spd: 2, rec: 3, dmg: 1.2, anim2: 'hookR' }),
   { id: 'vik_f2', name: 'Dockyard Shoulder', cmd: 'f+2', level: 'mid', dmg: 14, startup: 18, active: 3, recovery: 22, hitstun: 28, blockstun: 18,
-    advance: 0.55, push: 1.0, reach: 0.45, radius: 0.32, limb: 'body', hitPoint: [-0.15, 1.3, 0.45], anim: 'shoulderRam', sfx: 'heavy', signature: true },
+    advance: 0.55, push: 1.0, reach: 0.45, radius: 0.32, limb: 'body', hitPoint: [-0.15, 1.3, 0.45], anim: 'shoulderRam', sfx: 'heavy', signature: true,
+    strings: [{ cmd: '1', to: 'vik_f21' }] },
+  // f+2,1: the hammer arrives after the shoulder's blockstun ends: a gap the defender can jab or duck.
+  { id: 'vik_f21', name: 'Dockyard Hammer', cmd: '1', inString: true, level: 'high', dmg: 12, startup: 26, active: 3, recovery: 24, hitstun: 26, blockstun: 12,
+    advance: 0.25, reach: 0.68, radius: 0.24, limb: 'lHand', anim: 'vikKnuckle', sfx: 'heavy' },
+  { id: 'vik_df2', name: 'Gantry Uppercut', cmd: 'df+2', level: 'mid', dmg: 13, startup: 17, active: 3, recovery: 26, hitstun: 0, blockstun: 12,
+    onHit: 'launch', launch: 0.1, advance: 0.15, reach: 0.55, radius: 0.28, limb: 'rHand', hitPoint: [0.02, 1.4, 0.55], anim: 'uppercutR', sfx: 'heavy' },
   { id: 'vik_d4', name: 'Anchor Stomp', cmd: 'd+4', level: 'low', dmg: 12, startup: 19, active: 3, recovery: 26, hitstun: 28, blockstun: 12,
     reach: 0.65, radius: 0.3, limb: 'rFoot', anim: 'vikStomp', sfx: 'heavy', signature: true },
   { id: 'vik_b2', name: 'Collar Hammer', cmd: 'b+2', level: 'mid', dmg: 18, startup: 22, active: 3, recovery: 28, hitstun: 0, blockstun: 16,
-    onHit: 'knockdown', reach: 0.66, radius: 0.28, limb: 'rHand', anim: 'hammerR', sfx: 'heavy', signature: true },
+    onHit: 'knockdown', onCH: 'crumple', reach: 0.66, radius: 0.28, limb: 'rHand', anim: 'hammerR', sfx: 'heavy', signature: true },
   standardThrow('vik', { name: 'Foundry Drop', dmg: 18, startup: 13, throwAnim: 'suplex' }),
 ];
 
 const LEILA_MOVES = [
   { id: 'leila_1', name: 'Measure Jab', cmd: '1', level: 'high', dmg: 5, startup: 9, active: 2, recovery: 13, hitstun: 21, blockstun: 16,
-    reach: 0.66, radius: 0.18, limb: 'lHand', anim: 'leilaJab', sfx: 'light', signature: true },
+    reach: 0.66, radius: 0.18, limb: 'lHand', anim: 'leilaJab', sfx: 'light', signature: true,
+    strings: [{ cmd: '1', to: 'leila_11' }] },
+  // 1,1,2: natural three-punch combo (beginner).
+  { id: 'leila_11', name: 'Double Jab', cmd: '1', inString: true, level: 'high', dmg: 4, startup: 9, active: 2, recovery: 14, hitstun: 21, blockstun: 15,
+    advance: 0.1, reach: 0.66, radius: 0.18, limb: 'lHand', anim: 'leilaJab', sfx: 'light', role: 'filler',
+    strings: [{ cmd: '2', to: 'leila_112' }] },
+  { id: 'leila_112', name: 'Measured Cross', cmd: '2', inString: true, level: 'high', dmg: 9, startup: 11, active: 2, recovery: 20, hitstun: 23, blockstun: 13,
+    advance: 0.15, push: 0.6, reach: 0.7, radius: 0.18, limb: 'rHand', anim: 'crossR', sfx: 'medium' },
   ...basics('leila', { dmg: 0.9, anim3: 'leilaKick' }),
   { id: 'leila_b2', name: 'Check Hook', cmd: 'b+2', level: 'high', dmg: 10, startup: 13, active: 2, recovery: 20, hitstun: 25, blockstun: 14,
-    startupBonus: 0.3, tracking: 2, reach: 0.6, radius: 0.22, limb: 'rHand', anim: 'leilaHook', sfx: 'medium', signature: true },
+    startupBonus: 0.3, onCH: 'crumple', tracking: 2, reach: 0.6, radius: 0.22, limb: 'rHand', anim: 'leilaHook', sfx: 'medium', signature: true },
   { id: 'leila_f2', name: 'Body Cross', cmd: 'f+2', level: 'mid', dmg: 11, startup: 14, active: 2, recovery: 19, hitstun: 25, blockstun: 14,
-    advance: 0.15, reach: 0.66, radius: 0.2, limb: 'rHand', anim: 'leilaBody', sfx: 'medium', signature: true },
+    advance: 0.15, reach: 0.66, radius: 0.2, limb: 'rHand', anim: 'leilaBody', sfx: 'medium', signature: true,
+    strings: [{ cmd: '2', to: 'leila_f22' }] },
+  // f+2,2: the uppercut arrives after the body cross's blockstun (gap on block); on an airborne
+  // opponent it juggles as a finisher.
+  { id: 'leila_f22', name: 'Rising Uppercut', cmd: '2', inString: true, level: 'mid', dmg: 12, startup: 24, active: 3, recovery: 26, hitstun: 0, blockstun: 12,
+    onHit: 'knockdown', advance: 0.2, reach: 0.55, radius: 0.26, limb: 'rHand', hitPoint: [0.02, 1.4, 0.55], anim: 'uppercutR', sfx: 'heavy' },
   { id: 'leila_d4', name: 'Toe Stamp', cmd: 'd+4', level: 'low', dmg: 6, startup: 12, active: 2, recovery: 16, hitstun: 19, blockstun: 10,
     reach: 0.55, radius: 0.24, limb: 'rFoot', anim: 'leilaStamp', sfx: 'light', signature: true },
   standardThrow('leila'),
@@ -164,9 +199,20 @@ const LEILA_MOVES = [
 const CAIO_MOVES = [
   { id: 'caio_1', name: 'Ginga Palm', cmd: '1', level: 'high', dmg: 5, startup: 11, active: 2, recovery: 15, hitstun: 21, blockstun: 16,
     reach: 0.66, radius: 0.18, limb: 'lHand', anim: 'caioPalm', sfx: 'light', signature: true },
-  ...basics('caio', { spd: 2, kickReach: 0.12, anim3: 'caioMeia', anim4: 'caioRound' }),
+  ...withStrings(basics('caio', { spd: 2, kickReach: 0.12, anim3: 'caioMeia', anim4: 'caioRound' }), {
+    caio_3: [{ cmd: '4', to: 'caio_34' }],
+  }),
+  // 3,4: natural kick combo ending in a knockdown armada (beginner).
+  { id: 'caio_34', name: 'Armada Finish', cmd: '4', inString: true, level: 'high', dmg: 12, startup: 15, active: 3, recovery: 28, hitstun: 0, blockstun: 12,
+    onHit: 'knockdown', tracking: 3, advance: 0.15, reach: 0.95, radius: 0.26, limb: 'rFoot', anim: 'caioRound', sfx: 'heavy' },
+  { id: 'caio_df3', name: 'Ponteira', cmd: 'df+3', level: 'mid', dmg: 11, startup: 16, active: 3, recovery: 26, hitstun: 0, blockstun: 12,
+    onHit: 'launch', launch: 0.1, advance: 0.15, reach: 0.8, radius: 0.24, limb: 'lFoot', anim: 'caioMeia', sfx: 'heavy' },
   { id: 'caio_f3', name: 'Orbit Heel', cmd: 'f+3', level: 'mid', dmg: 12, startup: 19, active: 4, recovery: 26, hitstun: 30, blockstun: 14,
-    tracking: 3, reach: 0.95, radius: 0.26, limb: 'rFoot', anim: 'caioOrbit', sfx: 'heavy', signature: true },
+    tracking: 3, reach: 0.95, radius: 0.26, limb: 'rFoot', anim: 'caioOrbit', sfx: 'heavy', signature: true,
+    strings: [{ cmd: '4', to: 'caio_f34' }] },
+  // f+3,4: delayed spinning follow-up with a gap after the heel (block it or duck it: high).
+  { id: 'caio_f34', name: 'Orbit Spin', cmd: '4', inString: true, level: 'high', dmg: 13, startup: 22, active: 3, recovery: 28, hitstun: 0, blockstun: 12,
+    onHit: 'knockdown', tracking: 2, advance: 0.2, reach: 0.95, radius: 0.26, limb: 'rFoot', anim: 'caioCompass', sfx: 'heavy' },
   { id: 'caio_d4', name: 'Rasteira', cmd: 'd+4', level: 'low', dmg: 10, startup: 20, active: 3, recovery: 30, hitstun: 0, blockstun: 12,
     onHit: 'knockdown', crouching: true, reach: 0.95, radius: 0.26, limb: 'rFoot', anim: 'caioRasteira', sfx: 'medium', signature: true },
   { id: 'caio_b4', name: 'Compass Kick', cmd: 'b+4', level: 'high', dmg: 17, startup: 24, active: 3, recovery: 32, hitstun: 0, blockstun: 16,
@@ -176,7 +222,16 @@ const CAIO_MOVES = [
 
 const SORA_MOVES = [
   { id: 'sora_1', name: 'Needle Strike', cmd: '1', level: 'high', dmg: 5, startup: 10, active: 2, recovery: 13, hitstun: 21, blockstun: 15,
-    reach: 0.7, radius: 0.15, limb: 'lHand', anim: 'soraNeedle', sfx: 'light', signature: true },
+    reach: 0.7, radius: 0.15, limb: 'lHand', anim: 'soraNeedle', sfx: 'light', signature: true,
+    strings: [{ cmd: '2', to: 'sora_12' }] },
+  // 1,2: natural; 1,2,4 adds a high kick after a gap (blockable / duckable).
+  { id: 'sora_12', name: 'Needle Cross', cmd: '2', inString: true, level: 'high', dmg: 7, startup: 11, active: 2, recovery: 17, hitstun: 22, blockstun: 13,
+    advance: 0.12, reach: 0.7, radius: 0.17, limb: 'rHand', anim: 'crossR', sfx: 'medium', role: 'filler',
+    strings: [{ cmd: '4', to: 'sora_124' }] },
+  { id: 'sora_124', name: 'Vector Kick', cmd: '4', inString: true, level: 'high', dmg: 12, startup: 21, active: 3, recovery: 26, hitstun: 0, blockstun: 12,
+    onHit: 'knockdown', advance: 0.15, reach: 0.85, radius: 0.24, limb: 'rFoot', anim: 'roundR', sfx: 'heavy' },
+  { id: 'sora_df2', name: 'Rising Vector', cmd: 'df+2', level: 'mid', dmg: 11, startup: 15, active: 2, recovery: 24, hitstun: 0, blockstun: 12,
+    onHit: 'launch', launch: 0.1, reach: 0.52, radius: 0.24, limb: 'rHand', hitPoint: [0.02, 1.4, 0.52], anim: 'uppercutR', sfx: 'heavy' },
   ...basics('sora', { anim3: 'soraKick' }),
   { id: 'sora_f2', name: 'Vector Palm', cmd: 'f+2', level: 'mid', dmg: 10, startup: 13, active: 2, recovery: 18, hitstun: 24, blockstun: 14,
     reach: 0.68, radius: 0.2, limb: 'rHand', anim: 'soraPalm', sfx: 'medium', signature: true },
@@ -190,6 +245,68 @@ const SORA_MOVES = [
 // Kai is kept from the original game as a bonus fighter, rescaled to the 100-HP rules.
 const KAI_DMG_SCALE = 100 / 170;
 const KAI_SCALED = KAI_MOVES.map((m) => ({ ...m, dmg: m.level === 'throw' ? STANDARD_THROW_DMG : Math.max(1, Math.round(m.dmg * KAI_DMG_SCALE)) }));
+
+// ======================================================================================
+// Authored combo routes (validated by tests/combos.test.js, listed in the move list, used by the
+// CPU's hit-confirm plans and practice-mode demonstrations).
+//   kind: 'true'   natural combo: every hit lands even if the defender guards at the earliest frame
+//         'string' pressure string with an intentional gap after `gapAfter` hits: the next hit can
+//                  be blocked on hit (unless gapOn: 'block', where only the blocked string has the
+//                  gap), and on block beaten by `defense` ('jab' interrupt / 'duck' / 'block')
+//         'juggle' launcher into an air combo (airborne opponents cannot guard)
+//         'ch'     only continues when the opener is a counter hit (on a normal hit the follow-up
+//                  is blocked)
+//   steps: route executor steps (sim/routes.js); ▸ in notation = link (new move after recovery)
+//   damage: measured against an unguarded defender (counter-hit routes: with the counter hit)
+// ======================================================================================
+const s = (cmd, o = {}) => ({ cmd, ...o });
+const link = (cmd, o = {}) => ({ cmd, link: true, ...o });
+export const COMBOS = {
+  ren: [
+    { id: 'ren_b', name: 'Anchor One-Two', kind: 'true', notation: '1,2', steps: [s('1'), s('2')], hits: 2, damage: 12, role: 'beginner' },
+    { id: 'ren_p', name: 'Anchor Crescent', kind: 'string', notation: '1,2,b+4', steps: [s('1'), s('2'), s('b+4')], hits: 3, damage: 25, gapAfter: 2, defense: 'duck', role: 'pressure',
+      note: 'heel is high and arrives after the cross: block or duck it' },
+    { id: 'ren_l', name: 'Knife-Hand Launch', kind: 'juggle', notation: 'df+2 ▸ 1,f+2,b+4', steps: [s('df+2'), link('1'), s('f+2'), s('b+4')], hits: 4, damage: 28, role: 'launcher',
+      note: '1,f+2,b+4 is an air-only string' },
+  ],
+  maya: [
+    { id: 'maya_b', name: 'Reef One-Two', kind: 'true', notation: '1,2', steps: [s('1'), s('2')], hits: 2, damage: 9, role: 'beginner' },
+    { id: 'maya_p', name: 'Reef Tide', kind: 'string', notation: '1,2,d+4', steps: [s('1'), s('2'), s('d+4')], hits: 3, damage: 17, gapAfter: 2, defense: 'block', role: 'pressure',
+      note: 'low kick arrives after the cross: crouch-guard it; -15 on block' },
+    { id: 'maya_l', name: 'Rising Knee Route', kind: 'juggle', notation: 'df+4 ▸ f+1 ▸ 1,2,d+4', steps: [s('df+4'), link('f+1'), link('1'), s('2'), s('d+4')], hits: 5, damage: 28, role: 'launcher' },
+    { id: 'maya_c', name: 'Breaker Counter', kind: 'ch', notation: 'CH f+4 ▸ f+1 ▸ 1,2', steps: [s('f+4'), link('f+1'), link('1'), s('2')], hits: 4, damage: 26, role: 'counter',
+      note: 'f+4 launches only on counter hit; on a normal hit it knocks down' },
+  ],
+  viktor: [
+    { id: 'vik_b', name: 'Foundry One-Two', kind: 'true', notation: '1,2', steps: [s('1'), s('2')], hits: 2, damage: 18, role: 'beginner' },
+    { id: 'vik_p', name: 'Dockyard Press', kind: 'string', notation: 'f+2,1', steps: [s('f+2'), s('1')], hits: 2, damage: 26, gapAfter: 1, defense: 'jab', role: 'pressure',
+      note: 'hammer is delayed: on block the defender can jab first' },
+    { id: 'vik_l', name: 'Gantry Launch', kind: 'juggle', notation: 'df+2 ▸ 1,2', steps: [s('df+2'), link('1'), s('2')], hits: 3, damage: 26, role: 'launcher' },
+  ],
+  leila: [
+    { id: 'leila_b', name: 'Measured Three', kind: 'true', notation: '1,1,2', steps: [s('1'), s('1'), s('2')], hits: 3, damage: 16, role: 'beginner' },
+    { id: 'leila_p', name: 'Body-Upper', kind: 'string', notation: 'f+2,2', steps: [s('f+2'), s('2')], hits: 2, damage: 23, gapAfter: 1, defense: 'jab', role: 'pressure',
+      note: 'uppercut is delayed: on block the defender can jab first' },
+    { id: 'leila_c', name: 'Check Hook Counter', kind: 'ch', notation: 'CH b+2 ▸ f+2,2', steps: [s('b+2'), link('f+2'), s('2')], hits: 3, damage: 31, role: 'counter',
+      note: 'b+2 crumples only on counter hit; f+2 then lifts the crumpling opponent' },
+  ],
+  caio: [
+    { id: 'caio_b', name: 'Meia-Lua Armada', kind: 'true', notation: '3,4', steps: [s('3'), s('4')], hits: 2, damage: 19, role: 'beginner' },
+    { id: 'caio_p', name: 'Orbit Spin', kind: 'string', notation: 'f+3,4', steps: [s('f+3'), s('4')], hits: 2, damage: 24, gapAfter: 1, gapOn: 'block', defense: 'duck', role: 'pressure',
+      note: 'combos on hit; on block the high spin kick has a gap: duck it' },
+    { id: 'caio_l', name: 'Ponteira Launch', kind: 'juggle', notation: 'df+3 ▸ 3,4', steps: [s('df+3'), link('3'), s('4')], hits: 3, damage: 25, role: 'launcher' },
+  ],
+  sora: [
+    { id: 'sora_b', name: 'Needle One-Two', kind: 'true', notation: '1,2', steps: [s('1'), s('2')], hits: 2, damage: 11, role: 'beginner' },
+    { id: 'sora_p', name: 'Vector Line', kind: 'string', notation: '1,2,4', steps: [s('1'), s('2'), s('4')], hits: 3, damage: 23, gapAfter: 2, defense: 'duck', role: 'pressure',
+      note: 'kick is high and arrives after the cross: block or duck it' },
+    { id: 'sora_l', name: 'Rising Vector', kind: 'juggle', notation: 'df+2 ▸ 1,2,4', steps: [s('df+2'), link('1'), s('2'), s('4')], hits: 4, damage: 27, role: 'launcher' },
+  ],
+  kai: [
+    { id: 'kai_b', name: 'One-Two', kind: 'true', notation: '1,2', steps: [s('1'), s('2')], hits: 2, damage: 9, role: 'beginner' },
+    { id: 'kai_l', name: 'Uppercut Launch', kind: 'juggle', notation: 'df+2 ▸ 1,2', steps: [s('df+2'), link('1'), s('2')], hits: 3, damage: 15, role: 'launcher' },
+  ],
+};
 
 const ROSTER_IMAGE = 'assets/portraits/roster.jpg'; // rendered from the rigged models (tools/gallery.html?portraits=1)
 
@@ -244,6 +361,8 @@ export const CHARACTERS = {
     ai: 'balanced', moves: KAI_SCALED,
   },
 };
+
+for (const [id, list] of Object.entries(COMBOS)) CHARACTERS[id].combos = list;
 
 export const ROSTER = ['ren', 'maya', 'viktor', 'leila', 'caio', 'sora', 'kai'];
 export const BUTTONS = { B1, B2, B3, B4 };

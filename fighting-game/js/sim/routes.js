@@ -89,6 +89,7 @@ export class RouteBot {
       return self.mf >= self.move.total - ATTACK_BUFFER_FRAMES + 2 + (st.delay || 0);
     }
     // String follow-up: the running move must list it; press at the start of its window.
+    if (this.pressSeq !== undefined && self.attackSeq <= this.pressSeq) return false;
     if (self.state !== 'attack' || !self.move) return false;
     const s = self.move.stringSpecs.find((x) => x.cmd === st.cmd);
     if (!s) {
