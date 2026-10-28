@@ -3,6 +3,7 @@
 import { ACTIONS, describeBinding } from '../input/InputManager.js';
 import { CHARACTERS, ROSTER } from '../sim/characters.js';
 import { DUMMY_MODES } from '../sim/ai.js';
+import { movesFor } from '../sim/movedata.js';
 
 const $ = (sel, root = document) => root.querySelector(sel);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
@@ -361,14 +362,18 @@ export class RemapScreen {
 // ------------------------------------------------------------------ move list
 export function moveListTable(charId) {
   const c = CHARACTERS[charId];
-  const rows = c.moves.filter((m) => !m.inString || m.cmd !== 'auto').map((m) => {
-    const cmd = m.cmd === 'air' ? 'jump + any' : m.cmd === 'auto' ? '(after parry)' : m.inString ? '↳ ' + m.cmd : m.cmd;
-    const adv = m.level === 'throw' ? `break ${m.breakMask === 3 ? '1+2' : m.breakMask === 1 ? '1' : '2'}` : m.level === 'parry' ? 'parries high/mid' : `${fmt(m.block)} / ${m.onHit ? m.onHit : fmt(m.hit)}`;
-    return `<tr><td>${esc(m.name)}${m.rage ? ' <b style="color:#ff6a50">(RAGE)</b>' : ''}</td><td>${esc(cmd)}</td><td>${m.level}</td><td>${m.dmg || ''}</td><td>${m.level === 'parry' ? '' : 'i' + m.startup}</td><td>${esc(adv)}</td></tr>`;
+  // Same normalised data the simulation runs on (sim/movedata.js).
+  const { list } = movesFor(c);
+  const rows = list.filter((m) => m.cmd !== 'auto').map((m) => {
+    const cmd = m.cmd === 'air' ? 'jump + any' : m.inString ? '↳ ' + m.cmd : m.cmd;
+    const adv = m.level === 'throw' ? `break ${m.breakMask === 3 ? '1+2' : m.breakMask === 1 ? '1' : '2'}` : m.level === 'parry' ? 'parries high/mid' : `${m.display.block} / ${m.display.hit}${m.display.ch ? ' (CH ' + m.display.ch + ')' : ''}`;
+    return `<tr><td>${esc(m.name)}${m.rage ? ' <b style="color:#ff6a50">(RAGE)</b>' : ''}</td><td>${esc(cmd)}</td><td>${m.level}</td><td>${m.dmg || ''}</td><td>${m.display.startup}</td><td>${esc(adv)}</td></tr>`;
   });
-  return `<table class="movetable"><tr><th>Move</th><th>Command</th><th>Level</th><th>Dmg</th><th>Start</th><th>Block / Hit</th></tr>${rows.join('')}</table>`;
+  const combos = (c.combos || []).map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.notation)}</td><td colspan="2">${esc(KIND_LABEL[r.kind] || r.kind)}</td><td>${r.damage ?? ''}</td><td>${esc(r.note || '')}</td></tr>`);
+  return `<table class="movetable"><tr><th>Move</th><th>Command</th><th>Level</th><th>Dmg</th><th>Start</th><th>Block / Hit</th></tr>${rows.join('')}</table>` +
+    (combos.length ? `<table class="movetable combos"><tr><th>Combo</th><th>Input</th><th colspan="2">Type</th><th>Dmg</th><th>Notes</th></tr>${combos.join('')}</table>` : '');
 }
-const fmt = (n) => (n > 0 ? '+' + n : String(n));
+const KIND_LABEL = { true: 'true combo', string: 'string (has a gap)', ch: 'counter-hit only', juggle: 'launch combo' };
 
 export class MoveListScreen {
   constructor(app, charId = 'ren') { this.app = app; this.charId = charId; }
@@ -537,10 +542,15 @@ class HUD {
     const info = f.lastMoveInfo;
     let txt = '';
     if (info) {
-      const adv = info.result === 'block' ? fmt(info.block) : (info.result === 'hit' || info.result === 'ch') ? (info.onHit || fmt(info.hit)) : '—';
+      const adv = info.result === 'block' ? info.display.block : info.result === 'ch' ? (info.onCH || info.display.hit) : info.result === 'hit' ? info.display.hit : '—';
       txt += `Last move : ${info.name} (${info.cmd})\nStartup   : i${info.startup}   Level: ${info.level}\nResult    : ${info.result.toUpperCase()}   Adv: ${adv}\n`;
     } else txt += 'Last move : —\n\n\n';
-    txt += `Combo     : ${d.combo.hits} hits / ${d.combo.dmg} dmg\nP1 state  : ${f.state}${f.move ? ' ' + f.move.name + ' f' + f.mf : ''}\nDummy     : ${d.state}`;
+    txt += `Combo     : ${d.combo.hits} hits / ${d.combo.dmg} dmg${d.combo.terminal ? ' (finished)' : ''}\nP1 state  : ${f.state}${f.move ? ' ' + f.move.name + ' f' + f.mf : ''}\nDummy     : ${d.state}`;
+    const dm = match.dummy;
+    if (dm.mode === 'record') txt += `\nRECORDING : you control the dummy (${dm.recording.length}/600 frames)`;
+    else if (dm.mode === 'playback') txt += `\nPLAYBACK  : ${dm.recording.length ? dm.recording.length + ' frames, looping' : 'nothing recorded — pick "record" first'}`;
+    else if (dm.mode === 'punish drill') txt += `\nDRILL     : block the dummy's attack, then punish it (${match.punishes || 0} punished)`;
+    if (match.demo) txt += `\nDEMO      : ${match.demo.route.name} (${match.demo.route.notation})`;
     $('#tp-info').textContent = txt;
     $('#tp-dummy').textContent = match.dummy.mode;
   }

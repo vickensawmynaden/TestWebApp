@@ -8,14 +8,23 @@ const BLEND = { attack: 2.5, hit: 1.5, block: 2, air: 3, down: 6, default: 6 };
 // so idle sways (e.g. Caio's ginga) never grant evasion.
 //   bounce: idle bob amount, rate: bob speed, walk: walk-cycle period (frames), run: run period,
 //   sway: side-to-side ginga amplitude (m), stomp: heavy-step pelvis drop.
+//   Attack phrasing: prep = share of startup spent in preparation (anticipation), accel = power of
+//   the acceleration curve into contact, follow = follow-through overshoot past the contact pose,
+//   settle = share of recovery spent holding the follow-through before returning to guard.
 const STYLE = {
-  ren: { bounce: 0.5, rate: 0.08, walk: 28, run: 16 },
-  maya: { bounce: 2.2, rate: 0.2, walk: 20, run: 14 },
-  viktor: { bounce: 0.5, rate: 0.06, walk: 36, run: 20, stomp: 0.03 },
-  leila: { bounce: 1.4, rate: 0.17, walk: 22, run: 15 },
-  caio: { bounce: 0.6, rate: 0.07, walk: 26, run: 16, sway: 0.16 },
-  sora: { bounce: 0.35, rate: 0.09, walk: 26, run: 16 },
-  kai: { bounce: 1.0, rate: 0.16, walk: 24, run: 15 },
+  // Ren (karate): short preparation, explosive acceleration, sharp stop (kime), little overshoot.
+  ren: { bounce: 0.5, rate: 0.08, walk: 28, run: 16, prep: 0.4, accel: 2.6, follow: 0.05, settle: 0.25 },
+  // Maya (kickboxing): bouncy, snappy, quick return to guard.
+  maya: { bounce: 2.2, rate: 0.2, walk: 20, run: 14, prep: 0.35, accel: 2.2, follow: 0.1, settle: 0.15 },
+  // Viktor (grappling): heavy wind-up, committed follow-through, slow settle.
+  viktor: { bounce: 0.5, rate: 0.06, walk: 36, run: 20, stomp: 0.03, prep: 0.6, accel: 2.0, follow: 0.18, settle: 0.4 },
+  // Leila (boxing): compact, minimal telegraph, punches snap back to the guard.
+  leila: { bounce: 1.4, rate: 0.17, walk: 22, run: 15, prep: 0.3, accel: 2.4, follow: 0.06, settle: 0.1 },
+  // Caio (capoeira): flowing, long follow-through that carries the spin.
+  caio: { bounce: 0.6, rate: 0.07, walk: 26, run: 16, sway: 0.16, prep: 0.5, accel: 1.7, follow: 0.22, settle: 0.35 },
+  // Sora (precision): economical, crisp, no wasted motion.
+  sora: { bounce: 0.35, rate: 0.09, walk: 26, run: 16, prep: 0.35, accel: 2.3, follow: 0.04, settle: 0.2 },
+  kai: { bounce: 1.0, rate: 0.16, walk: 24, run: 15, prep: 0.45, accel: 2.2, follow: 0.12, settle: 0.25 },
 };
 
 export class Animator {
@@ -41,6 +50,8 @@ export class Animator {
     this.tmpA = new Float32Array(POSE_SIZE);
     this.key = '';
     this.blendT = 1; this.blendDur = 1;
+    this.attackStart = Float32Array.from(this.stance);   // pose an attack's preparation starts from
+    this.travel = 0; this.lastX = null; this.lastZ = null; // distance walked (drives the gait phase)
     this.faceDown = false;
     this.lastT = 0;
   }
@@ -51,19 +62,28 @@ export class Animator {
       this.from.set(this.pose);
       this.blendT = 0;
       this.blendDur = BLEND[f.state] || BLEND.default;
-      if (f.state === 'attack' && this.key.startsWith('attack')) this.blendDur = 2;
+      if (f.state === 'attack') {
+        // Attacks phrase their own transition: preparation starts from the current pose, so a
+        // string follow-up winds up from where the previous strike's follow-through ended.
+        this.attackStart.set(this.pose);
+        this.blendDur = 1;
+      }
       if (f.state === 'crumple') this.faceDown = true;
       if (f.state === 'air' || f.state === 'wall') this.faceDown = false;
       this.key = key;
     }
     const t = f.t + alpha;
+    this.trackTravel(f, alpha);
     this.computeTarget(f, world, t);
     // Crossfade from the previous pose; time advances with the simulation (freezes in hit-stop).
     const simFrame = f.frameCount + alpha;
+    // The fighter's frame counter restarts on round / practice resets: resync instead of stalling.
+    if (simFrame < this.lastT - 0.5) { this.lastT = simFrame; this.blendT = 1; this.travel = 0; this.lastX = null; }
     const dt = Math.max(0, simFrame - this.lastT);
     this.lastT = simFrame;
     this.blendT = Math.min(1, this.blendT + dt / this.blendDur);
     lerpPose(this.pose, this.from, this.target, ease.out(this.blendT));
+    this.footPlants(f);
     // Hit-stop shake on the victim.
     if (world.hitstop > 0 && (f.state === 'hit' || f.state === 'block' || f.state === 'air' || f.state === 'wall')) {
       const s = 0.012 * Math.sin(performance.now() * 0.09);
@@ -84,12 +104,14 @@ export class Animator {
         break;
       case 'walkF': case 'walkB': {
         T.set(this.stance);
-        this.walkCycle(T, t, f.state === 'walkF' ? 1 : -1, sty.walk);
+        // Gait phase follows the distance actually travelled: one cycle per stride.
+        const stride = (f.state === 'walkF' ? f.def.walkF : f.def.walkB) * sty.walk;
+        this.walkCycle(T, (Math.abs(this.travel) / stride) * sty.walk, f.state === 'walkF' ? 1 : -1, sty.walk);
         break;
       }
       case 'run': {
         T.set(st.run);
-        const ph = t / sty.run * Math.PI * 2;
+        const ph = (Math.abs(this.travel) / (f.def.walkF * 2.3 * sty.run)) * Math.PI * 2;
         const s = Math.sin(ph), c = Math.cos(ph);
         T[L.lFoot + 2] = 0.05 + s * 0.32; T[L.lFoot + 1] = 0.075 + Math.max(0, c) * 0.18;
         T[L.rFoot + 2] = 0.05 - s * 0.32; T[L.rFoot + 1] = 0.075 + Math.max(0, -c) * 0.18;
@@ -213,20 +235,62 @@ export class Animator {
     T[L.chest] += dir * 2;
   }
 
+  // Five phases on the move's own frame clock (so they line up with the simulation's frame data):
+  //   preparation  0 .. prepEnd           current pose -> wind-up (anticipation)
+  //   acceleration prepEnd .. startup     wind-up -> contact, accelerating (power curve)
+  //   contact      startup .. +active     contact pose held while the hitbox is active
+  //   follow-through after the active frames: overshoot past contact, then held briefly
+  //   recovery     back to guard (or to the next string's preparation, which starts from here)
   attackPose(f, t) {
-    const T = this.target, m = f.move;
+    const T = this.target, m = f.move, sty = this.style;
     const anim = this.attacks[m.anim] || this.attacks.jabL;
     const mf = Math.max(0, f.mf - 1 + (t - f.t));   // fractional move frame
     const s = m.startup, a = m.active || 1;
-    const windEnd = Math.max(2, s * 0.6);
-    const hold = s + a + 1;
     const base = m.crouching ? this.states.crouch : this.stance;
-    if (mf < windEnd) lerpPose(T, base, anim.wind, ease.inOut(mf / windEnd));
-    else if (mf < s) lerpPose(T, anim.wind, anim.hit, ease.snap((mf - windEnd) / (s - windEnd)));
-    else if (mf < hold) T.set(anim.hit);
-    else lerpPose(T, anim.hit, base, ease.inOut(Math.min(1, (mf - hold) / Math.max(1, m.total - hold))));
+    const chained = !!f.chainFrom && f.move && f.chainFrom !== f.move.id;
+    // String follow-ups start closer to their wind-up, so they need less preparation.
+    const prepEnd = Math.max(2, s * sty.prep * (chained ? 0.6 : 1));
+    const activeEnd = s + a;
+    const rec = Math.max(1, m.total - activeEnd);
+    const follow = activeEnd + rec * sty.settle;
+    const over = this.tmpA;
+    if (mf < prepEnd) {
+      lerpPose(T, this.attackStart, anim.wind, ease.inOut(mf / prepEnd));
+    } else if (mf < s) {
+      const k = (mf - prepEnd) / Math.max(1, s - prepEnd);
+      lerpPose(T, anim.wind, anim.hit, Math.pow(k, sty.accel));
+    } else if (mf < activeEnd) {
+      T.set(anim.hit);
+    } else if (mf < follow) {
+      // overshoot: continue a little along the strike direction, easing out
+      const k = Math.sin(Math.min(1, (mf - activeEnd) / Math.max(1, follow - activeEnd)) * Math.PI);
+      lerpPose(over, anim.wind, anim.hit, 1 + sty.follow);
+      lerpPose(T, anim.hit, over, k);
+    } else {
+      lerpPose(T, anim.hit, base, ease.inOut(Math.min(1, (mf - follow) / Math.max(1, m.total - follow))));
+    }
     if (anim.spin) T[L.root + 1] += anim.spin * Math.min(1, mf / s);
     if (m.level === 'parry' && f.mf >= m.parry[0] && f.mf <= m.parry[1]) T[L.chest] += Math.sin(mf) * 0.5;
+  }
+
+  // Distance moved along the facing since the last update (gait is driven by real movement).
+  trackTravel(f, alpha) {
+    const x = f.prevPos.x + (f.pos.x - f.prevPos.x) * alpha, z = f.prevPos.z + (f.pos.z - f.prevPos.z) * alpha;
+    if (this.lastX !== null) {
+      const d = (x - this.lastX) * f.face.x + (z - this.lastZ) * f.face.z;
+      if (Math.abs(d) < 0.5) this.travel += d;   // ignore teleports (resets, throws)
+    }
+    this.lastX = x; this.lastZ = z;
+  }
+
+  // Foot plant weights from the pose timeline: a grounded state's foot is planted while its
+  // target is at ankle height and released smoothly as it lifts (swing phase, kicks, steps).
+  footPlants(f) {
+    const P = this.pose;
+    const grounded = !['air', 'jump', 'down', 'thrown', 'wall', 'crumple', 'ko', 'getup'].includes(f.state) && f.pos.y < 0.01 && P[L.root] === 0;
+    for (const [i, k] of [[0, L.lFoot], [1, L.rFoot]]) {
+      P[L.plant + i] = grounded ? Math.max(0, Math.min(1, (0.105 - P[k + 1]) / 0.025)) : 0;
+    }
   }
 
   throwerPose(f, t) {

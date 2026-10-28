@@ -184,9 +184,28 @@ function initPads() {
     await frames(10);
     check(`select + render ${a} vs ${b}`, ok);
   }
-  // portraits come from the reference sheet
-  const img = await ev(() => new Promise((res) => { const i = new Image(); i.onload = () => res([i.naturalWidth, i.naturalHeight]); i.onerror = () => res(null); i.src = 'public/references/fighter-roster.png'; }));
-  check('reference portrait sheet loads', img && img[0] === 1536 && img[1] === 1024, JSON.stringify(img));
+  // --- rigged glTF characters: all six load as skinned models, and a mirror match gets two independent skeletons
+  const rig = await ev(() => {
+    const app = window.__app;
+    app.startMatch('versus', 'sora', 'sora');
+    const [a, b] = app.view.models;
+    return { skinned: [a, b].map((m) => m.constructor.name), sameSkeleton: a.mesh.skeleton === b.mesh.skeleton, sameBone: a.bones.hips === b.bones.hips };
+  });
+  check('mirror match uses two independent skinned skeletons', rig.skinned.every((n) => n === 'SkinnedFighter') && !rig.sameSkeleton && !rig.sameBone, JSON.stringify(rig));
+  const indep = await ev(async () => {
+    const { STATE_POSES, STANCES, compilePose } = await import('/js/render/poses.js');
+    const [a, b] = window.__app.view.models;
+    const q = (m) => m.bones.thigh_L.quaternion.toArray().map((x) => x.toFixed(4)).join(',');
+    const bBefore = q(b), aBefore = q(a);
+    a.applyPose(compilePose(STATE_POSES.crouch, compilePose(STANCES.sora)));  // pose only copy A
+    return { aChanged: q(a) !== aBefore, bUnchanged: q(b) === bBefore };
+  });
+  check('two copies of one fighter animate independently', indep.aChanged && indep.bUnchanged, JSON.stringify(indep));
+  const loaded = await ev(async () => (await import('/js/render/SkinnedFighter.js')).characterStatus());
+  check('all six character GLBs loaded', loaded.loaded.length === 6 && loaded.failed.length === 0, JSON.stringify(loaded));
+  // portraits are rendered from the rigged models
+  const img = await ev(() => new Promise((res) => { const i = new Image(); i.onload = () => res([i.naturalWidth, i.naturalHeight]); i.onerror = () => res(null); i.src = 'assets/portraits/roster.jpg'; }));
+  check('portrait sheet loads', img && img[0] === 1536 && img[1] === 1024, JSON.stringify(img));
   check('no missing assets (HTTP errors)', badRequests.length === 0, badRequests.join(' | '));
   check('no page errors', errors.length === 0, errors.join(' | '));
   await browser.close();

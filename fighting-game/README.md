@@ -4,10 +4,21 @@ A browser-based 3D fighting game with close-range, Tekken-style combat: four att
 standing and crouching guard, sidesteps and distinct fighting styles. All characters, stage,
 animation, audio and branding are original. There are no ripped or third-party game assets.
 
-- **Six playable fighters from the roster concept sheet**
-  (`public/references/fighter-roster.png`): Ren Arashi (Karate), Maya Baptiste (Kickboxing),
-  Viktor Orlov (Grappling), Leila Haddad (Boxing), Caio Luz (Capoeira) and Sora Kestrel
-  (Precision Combat). Kai, from the first version of the game, remains as a bonus fighter.
+- **Six playable fighters with rigged, skinned 3D character models** (supplied GLB models,
+  auto-rigged by `tools/charbuild/rig.py`). Each model fills one existing roster slot, and that
+  fighter's moves, frame data and personality are unchanged:
+
+  | Fighter (style) | Model |
+  |---|---|
+  | Ren Arashi (Karate) | Mushroom Ninja |
+  | Maya Baptiste (Kickboxing) | Mushroom Warrior (blade) |
+  | Viktor Orlov (Grappling) | Fantasy Bear |
+  | Leila Haddad (Boxing) | Leather Warrior |
+  | Caio Luz (Capoeira) | Armored Cobra |
+  | Sora Kestrel (Precision Combat) | Tactical Soldier |
+
+  Kai, from the first version of the game, remains as a bonus fighter on the procedural body.
+  See `assets/manifest.json` for files, provenance and status.
 - **Local versus for two players** on two physical gamepads (BeTop, XInput or DirectInput pads),
   with keyboard fallback, plus **player-versus-CPU** with a personality per fighter.
 - **True 3D combat**: sidesteps around the opponent, attack direction locked at startup (so
@@ -43,6 +54,21 @@ Then open **http://localhost:8080** in the browser.
 > Opening `index.html` directly from disk (`file://`) will **not** work, because ES modules and
 > import maps require HTTP. Any static server is fine, for example `python3 -m http.server 8080`
 > run inside `fighting-game/`.
+
+The game loads the six character GLBs (~11 MB in total) behind a "Loading fighters" screen.
+`http://localhost:8080/?models=procedural` skips them and uses the prototype bodies.
+
+### Rebuilding the character rigs
+
+```bash
+pip install numpy scipy pillow
+python3 tools/charbuild/rig.py            # all six; or e.g. rig.py maya
+```
+
+Input is `assets/source/*.glb` (the supplied static models). Joint positions per model live in
+`tools/charbuild/rigdefs.py`. To check joints, weights and poses, open
+`http://localhost:8080/tools/gallery.html?pose=crossR.hit&yaw=70` (add `&weights=1` for a
+skin-weight view, or `?portraits=1` to re-render `assets/portraits/roster.jpg`).
 
 ### Deploying to Vercel
 
@@ -80,7 +106,10 @@ fighting-game/
 │   ├── render/
 │   │   ├── GameView.js     Renderer, bloom post-processing, PMREM reflections, wiring
 │   │   ├── appearance.js   Per-fighter look: proportions, skin, hair, clothing, accessories
-│   │   ├── FighterModel.js Builds the procedural prototype body from appearance.js on the IK rig
+│   │   ├── SkinnedFighter.js  Rigged glTF fighter: loads assets/characters/<id>.glb, per-instance
+│   │   │                   skeleton clone, retargets the poses (IK on the model's bone lengths),
+│   │   │                   planted-foot locking, weapon wrist aim, tail follow-through
+│   │   ├── FighterModel.js Procedural prototype body (Kai, and fallback if a GLB fails to load)
 │   │   ├── Animator.js     State → pose: keyframed attacks synced to frame data, locomotion,
 │   │   │                   hit reactions, juggles, throws, crossfades
 │   │   ├── poses.js        Shared rig pose data: stances, reactions, 51 attack animations, win/intro
@@ -91,9 +120,17 @@ fighting-game/
 │   ├── audio/Audio.js      Web Audio synthesised SFX, grunts, music; speech announcer
 │   └── ui/UI.js            Title, menus, character select, controllers, remap, move list,
 │                           results, HUD
-├── public/references/      fighter-roster.png (concept sheet; also used for select portraits)
-├── tests/                  Node tests (combat.test.js, roster.test.js) and Playwright e2e (e2e/)
-├── tools/serve.js          Zero-dependency static server
+├── assets/
+│   ├── characters/         Rigged fighter GLBs (game files) + rig-report.json
+│   ├── source/             The supplied unrigged GLBs (pipeline input; not deployed)
+│   ├── portraits/roster.jpg  Select-screen portraits rendered from the rigged models
+│   └── manifest.json       Files, mesh/skeleton/texture data, provenance, rights, status
+├── public/references/      fighter-roster.png (original concept sheet)
+├── tests/                  Node tests (combat, roster, assets) and Playwright e2e (e2e/)
+├── tools/
+│   ├── serve.js            Zero-dependency static server
+│   ├── gallery.html        Pose gallery / weight view / portrait renderer (dev tool)
+│   └── charbuild/          rig.py (auto-rigger), rigdefs.py (joint tables), glb.py (writer)
 └── vendor/three/           Three.js r170 + the post-processing add-ons used
 ```
 
@@ -178,97 +215,125 @@ Notation: **1** left punch · **2** right punch · **3** left kick · **4** righ
 | Get up | any button or direction when knocked down |
 | Pause | Esc (P1 keyboard), Num Enter (P2 keyboard), Start on pads |
 
-Directional attacks take priority over plain ones (F+2 beats 2). Attacks pressed in the last
-8 frames of recovery are buffered, and two buttons pressed within 2 frames count as together.
+Directional attacks take priority over plain ones (F+2 beats 2). Two buttons pressed within 2
+frames count as together.
 
-### Roster and frame data
+### Input buffering and reliability
 
-Each fighter has a signature jab on **1**, shared basic **2 / 3 / 4** moves (tuned per fighter),
-three directional signature attacks (★) and a breakable throw. All attacks are standalone:
-there are no strings or launchers for the six roster fighters (Kai keeps his original strings
-and launchers, which have explicit cancel and combo-scaling rules). Damage is per hit with
-**100 HP** per fighter and **no chip damage**. Hitstun and blockstun count from the first active
-frame; advantage = stun − (remaining active + recovery).
+- Every input frame carries a stamp. An attack entered in the **last 8 frames of recovery**, or in
+  the **last 6 frames of blockstun** (for punishing), is buffered and comes out on the first free
+  frame. A buffered attack **expires after 10 frames**.
+- Being hit, launched, knocked down, wall-splatted, thrown or parried **drops any queued or
+  buffered attack and invalidates every input entered before it**, so nothing fires unexpectedly
+  after an interruption or on wake-up. A new round or rematch clears all input history.
+- Motion commands (`f,f`, `qcf`) are matched backward from the newest input, so an older
+  completed motion can never hide a newer one, and a motion **is consumed** when its move comes
+  out (the same quarter-circle cannot fire a second time).
+- Mashing during recovery never starts a move early (tested).
 
-> **All values below are conservative starting values that require playtesting.**
+### Strings, combos and juggles
 
-**Ren Arashi** — Karate
+Full command lists with frame data, string windows and measured combo damage are in
+**[docs/COMMANDS.md](docs/COMMANDS.md)** (generated from the game data with
+`node tools/movelist.mjs`). The in-game move list (pause menu) shows the same data and the
+combo routes.
 
-| Move | Input | Level | Dmg | Startup | Active | Recovery | Hitstun | Blockstun | On block | On hit |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Anchor Jab ★ | 1 | high | 5 | 10 | 2 | 14 | 21 | 16 | +1 | +6 |
-| Right Straight | 2 | high | 7 | 12 | 2 | 18 | 22 | 16 | -3 | +3 |
-| Left Kick | 3 | mid | 8 | 14 | 2 | 22 | 24 | 15 | -8 | +1 |
-| Right Kick | 4 | high | 9 | 15 | 3 | 24 | 28 | 16 | -10 | +2 |
-| Harbor Palm ★ | F+2 | mid | 11 | 14 | 3 | 20 | 26 | 14 | -8 | +4 |
-| Stone Sweep ★ | D+3 | low | 9 | 16 | 3 | 26 | 26 | 12 | -16 | -2 |
-| Crescent Heel ★ | B+4 | mid | 16 | 20 | 3 | 26 | knockdown | 16 | -12 | knockdown |
-| Clinch Throw | 1+3 / Throw | throw | 12 | 12 | 2 | 28 | — | — | — | break with 1 / Throw |
+- **Strings** (`1,2`): a follow-up is accepted inside an **input window** of the parent move,
+  starts no earlier than its **execution frame**, and can require the parent's result (hit,
+  counter hit, block or whiff) and the opponent's state (grounded or airborne). A follow-up
+  written without a direction yields to a directional move that matches exactly (`1` then `f+2`
+  is the f+2 move, not the 1,2 string). If a follow-up's condition fails, its input falls back to
+  the ordinary move.
+- **Juggle roles**: launchers lift, fillers keep the opponent up, finishers end the juggle.
+  After a finisher (or any knockdown), nothing can lift the opponent again. Hits on a grounded
+  opponent never pick them back up. Damage scaling (−10 % per hit, ×0.85 airborne, ×0.8 on the
+  wall), rising juggle gravity, the 12-hit juggle cap, one wall splat and one crumple per combo
+  are unchanged. Wall-splat stun has an absolute cap of 60 frames, so wall loops always end.
 
-**Maya Baptiste** — Kickboxing
+Authored routes per fighter (all validated in the simulation; damage measured on a no-guard
+dummy, counter-hit routes with the counter hit):
 
-| Move | Input | Level | Dmg | Startup | Active | Recovery | Hitstun | Blockstun | On block | On hit |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Reef Jab ★ | 1 | high | 4 | 9 | 2 | 13 | 20 | 15 | +1 | +6 |
-| Right Straight | 2 | high | 6 | 11 | 2 | 18 | 22 | 16 | -3 | +3 |
-| Left Kick | 3 | mid | 7 | 13 | 2 | 22 | 24 | 15 | -8 | +1 |
-| Right Kick | 4 | high | 8 | 14 | 3 | 24 | 28 | 16 | -10 | +2 |
-| Twin-Step Elbow ★ | F+1 | mid | 8 | 12 | 2 | 17 | 22 | 15 | -3 | +4 |
-| Coral Low Kick ★ | D+4 | low | 6 | 13 | 2 | 18 | 20 | 11 | -8 | +1 |
-| Breaker Knee ★ | F+4 | mid | 13 | 16 | 3 | 24 | knockdown | 14 | -12 | knockdown |
-| Clinch Throw | 1+3 / Throw | throw | 12 | 12 | 2 | 28 | — | — | — | break with 1 / Throw |
+| Fighter | Beginner (true combo) | Pressure string (gap) | Launcher / counter-hit route |
+|---|---|---|---|
+| Ren | `1,2` — 12 | `1,2,b+4` — 25 (heel is high: block or duck) | `df+2 ▸ 1,f+2,b+4` — 28 |
+| Maya | `1,2` — 9 | `1,2,d+4` — 17 (low after a gap: crouch-guard it) | `df+4 ▸ f+1 ▸ 1,2,d+4` — 28; `CH f+4 ▸ f+1 ▸ 1,2` — 26 |
+| Viktor | `1,2` — 18 | `f+2,1` — 26 (jab the gap on block) | `df+2 ▸ 1,2` — 26 |
+| Leila | `1,1,2` — 16 | `f+2,2` — 23 (jab the gap on block) | `CH b+2 ▸ f+2,2` — 31 |
+| Caio | `3,4` — 19 | `f+3,4` — 24 (combos on hit; duck it on block) | `df+3 ▸ 3,4` — 25 |
+| Sora | `1,2` — 11 | `1,2,4` — 23 (kick is high: block or duck) | `df+2 ▸ 1,2,4` — 27 |
+| Kai | `1,2` — 9 | — | `df+2 ▸ 1,2` — 15 (Kai keeps his scaled original damage) |
 
-**Viktor Orlov** — Grappling
+`▸` = the next move after recovery (link). The launch and counter-hit routes are inside the
+25–35 damage target. The suggested designs were implemented, then adjusted after simulation
+tests (see *Balance changes* below).
 
-| Move | Input | Level | Dmg | Startup | Active | Recovery | Hitstun | Blockstun | On block | On hit |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Hammer Knuckle ★ | 1 | high | 8 | 12 | 2 | 18 | 24 | 17 | -2 | +5 |
-| Right Straight | 2 | high | 8 | 14 | 2 | 21 | 22 | 16 | -6 | 0 |
-| Left Kick | 3 | mid | 10 | 16 | 2 | 25 | 24 | 15 | -11 | -2 |
-| Right Kick | 4 | high | 11 | 17 | 3 | 27 | 28 | 16 | -13 | -1 |
-| Dockyard Shoulder ★ | F+2 | mid | 14 | 18 | 3 | 22 | 28 | 18 | -6 | +4 |
-| Anchor Stomp ★ | D+4 | low | 12 | 19 | 3 | 26 | 28 | 12 | -16 | 0 |
-| Collar Hammer ★ | B+2 | mid | 18 | 22 | 3 | 28 | knockdown | 16 | -14 | knockdown |
-| Foundry Drop | 1+3 / Throw | throw | 18 | 13 | 2 | 28 | — | — | — | break with 1 / Throw |
+### Balance changes (separate from animation work)
 
-**Leila Haddad** — Boxing
+Existing move values were kept as the baseline. Deliberate changes:
+- **New moves**: launchers `df+2` (Ren, Viktor, Sora), `df+4` (Maya), `df+3` (Caio); string
+  follow-ups for every main fighter (see the command lists).
+- **Counter-hit properties added**: Maya's f+4 launches on counter hit; Leila's b+2 and Viktor's
+  b+2 crumple on counter hit.
+- **Pushback reduced**: standing hit pushback ~0.36 m → ~0.21 m, block pushback ~0.39 m →
+  ~0.25 m, so natural strings still reach after the first hit.
+- **Juggle spacing**: launchers and filler hits drift the airborne opponent toward 0.8 m from the
+  attacker (instead of pushing them away), so routes work at any launch distance. Finishers still
+  carry the opponent away.
+- **Crumple** stays hittable (crouching posture) for 44 of its 52 frames (was 30), so a
+  follow-up can reach a crumpling opponent.
+- **Wall-splat** stun extension capped at 60 frames total (previously re-extendable).
+- **Kai's df+1** is labelled as an elbow strike (it always hit with the elbow).
 
-| Move | Input | Level | Dmg | Startup | Active | Recovery | Hitstun | Blockstun | On block | On hit |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Measure Jab ★ | 1 | high | 5 | 9 | 2 | 13 | 21 | 16 | +2 | +7 |
-| Right Straight | 2 | high | 6 | 12 | 2 | 18 | 22 | 16 | -3 | +3 |
-| Left Kick | 3 | mid | 7 | 14 | 2 | 22 | 24 | 15 | -8 | +1 |
-| Right Kick | 4 | high | 8 | 15 | 3 | 24 | 28 | 16 | -10 | +2 |
-| Check Hook ★ | B+2 | high | 10 | 13 | 2 | 20 | 25 | 14 | -7 | +4 |
-| Body Cross ★ | F+2 | mid | 11 | 14 | 2 | 19 | 25 | 14 | -6 | +5 |
-| Toe Stamp ★ | D+4 | low | 6 | 12 | 2 | 16 | 19 | 10 | -7 | +2 |
-| Clinch Throw | 1+3 / Throw | throw | 12 | 12 | 2 | 28 | — | — | — | break with 1 / Throw |
+### Practice mode
 
-**Caio Luz** — Capoeira
+Pause menu → **Dummy behaviour**:
+- **stand guard**: standing still guards highs and mids
+- **no guard**, **crouch guard**, **guard all**
+- **guard after first hit**: takes the first hit, then guards on every legal frame, for testing
+  whether your combo is real
+- **random guard**: guards half of your attacks
+- **counter hit**: every first hit is a counter hit
+- **jump**, **cpu**
+- **record**: you control the dummy and it records up to 10 s; **playback** loops the recording
+  (fighter-relative, so it works from either side)
+- **punish drill**: the dummy throws out an attack that is unsafe on block. Block it and punish
+  it; the HUD reports PUNISHED or MISSED with the move's frame disadvantage
 
-| Move | Input | Level | Dmg | Startup | Active | Recovery | Hitstun | Blockstun | On block | On hit |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Ginga Palm ★ | 1 | high | 5 | 11 | 2 | 15 | 21 | 16 | 0 | +5 |
-| Right Straight | 2 | high | 7 | 14 | 2 | 18 | 22 | 16 | -3 | +3 |
-| Left Kick | 3 | mid | 8 | 16 | 2 | 22 | 24 | 15 | -8 | +1 |
-| Right Kick | 4 | high | 9 | 17 | 3 | 24 | 28 | 16 | -10 | +2 |
-| Orbit Heel ★ | F+3 | mid | 12 | 19 | 4 | 26 | 30 | 14 | -15 | +1 |
-| Rasteira ★ | D+4 | low | 10 | 20 | 3 | 30 | knockdown | 12 | -20 | knockdown |
-| Compass Kick ★ | B+4 | high | 17 | 24 | 3 | 32 | knockdown | 16 | -18 | knockdown |
-| Clinch Throw | 1+3 / Throw | throw | 12 | 12 | 2 | 28 | — | — | — | break with 1 / Throw |
+Pause menu → **Demo combo** / **Play combo demo**: your fighter performs any of their authored
+routes on the dummy.
 
-**Sora Kestrel** — Precision Combat
+### Development overlay
 
-| Move | Input | Level | Dmg | Startup | Active | Recovery | Hitstun | Blockstun | On block | On hit |
-|---|---|---|---|---|---|---|---|---|---|---|
-| Needle Strike ★ | 1 | high | 5 | 10 | 2 | 13 | 21 | 15 | +1 | +7 |
-| Right Straight | 2 | high | 7 | 12 | 2 | 18 | 22 | 16 | -3 | +3 |
-| Left Kick | 3 | mid | 8 | 14 | 2 | 22 | 24 | 15 | -8 | +1 |
-| Right Kick | 4 | high | 9 | 15 | 3 | 24 | 28 | 16 | -10 | +2 |
-| Vector Palm ★ | F+2 | mid | 10 | 13 | 2 | 18 | 24 | 14 | -5 | +5 |
-| Cutline Kick ★ | D+3 | low | 8 | 14 | 2 | 20 | 22 | 12 | -9 | +1 |
-| Axis Heel ★ | F+4 | mid | 13 | 17 | 3 | 22 | 28 | 15 | -9 | +4 |
-| Clinch Throw | 1+3 / Throw | throw | 12 | 12 | 2 | 28 | — | — | — | break with 1 / Throw |
+Press **F2** (or open with `?debug=hitboxes`) to draw what the simulation collides with:
+- **hurt volumes**: cyan cylinders
+- **attack volume**: dim during startup, bright red while active; it is swept from the body to
+  the hit point, uses the move's radius and spans the attack level's height band
+- **visible striking limb**: yellow cross, from the model
+- **contact events**: markers where hits and blocks were reported
+
+### CPU
+
+- **Delayed observation**: the CPU sees the opponent through a reaction delay (24 / 16 / 11
+  frames for Easy / Normal / Hard), position included, and never reads inputs.
+- **One reaction per attack**: it reacts once to each individual attack execution, so repeating
+  the same move is noticed every time.
+- **Punishing by frames and range**: it counts the frames still available (the opponent's
+  remaining recovery minus its own delay and remaining blockstun) and picks the most damaging
+  punisher, or punish route, that is fast enough with 2 frames of margin and reaches.
+- **Hit-confirmed combos**: it opens with its fighter's authored routes and only continues past a
+  confirm point once it has *seen* the hit land (after its reaction delay); a blocked opener stops
+  the route. It makes occasional mistakes (25 / 12 / 5 %).
+
+Personalities:
+- **Ren** mixes basic attacks.
+- **Maya** pressures at close range and dashes in.
+- **Viktor** closes distance and throws most often.
+- **Leila** waits in guard and punishes blocked attacks, or interrupts startup with Check Hook.
+- **Caio** keeps kick range and sidesteps the most.
+- **Sora** keeps spacing just outside range and punishes missed attacks.
+
+Tests check the delay, per-execution reactions, timed punishes, hit-confirm and these
+tendencies. Win rates between fighters are not balanced yet.
 
 Fighter-specific rules:
 - **Leila's Check Hook** deals **+30 % damage** when it hits an opponent during the startup of
@@ -279,19 +344,6 @@ Fighter-specific rules:
 - **Caio's ginga idle sway is visual only**: hurtboxes come from the simulation posture, so idling
   never grants evasion (covered by a test).
 - After getting up, a fighter cannot be thrown for 16 frames, so there is no guaranteed re-throw.
-
-### CPU personalities
-
-The CPU uses each fighter's own move list, sees the opponent through a reaction delay
-(24 / 16 / 11 frames for Easy / Normal / Hard) and makes occasional mistakes (25 / 12 / 5 %).
-- **Ren** mixes basic attacks.
-- **Maya** pressures at close range and dashes in.
-- **Viktor** closes distance and throws most often.
-- **Leila** waits in guard and punishes blocked attacks, or interrupts startup with Check Hook.
-- **Caio** keeps kick range and sidesteps the most.
-- **Sora** keeps spacing just outside range and punishes missed attacks.
-
-A deterministic test checks these tendencies. Win rates between fighters are not balanced yet.
 
 ## 7. Implemented features vs. still needing work
 
@@ -337,25 +389,49 @@ A deterministic test checks these tendencies. Win rates between fighters are not
 **Still needing work / not implemented:**
 - **Online multiplayer is not implemented.** There is no server or netcode. The deterministic sim
   is designed so rollback netcode could be added later, but nothing online exists today.
-- **The six fighters are procedural PROTOTYPE models.** The reference image is 2D concept art
-  with no mesh, skeleton or animation clips, and the project has no rigged GLB/glTF assets. So
-  each fighter is built from lathe and sphere primitives on a shared IK rig. They match the
-  reference's silhouette, colours, hair and outfits closely enough to tell apart, but faces,
-  hands, cloth folds and hair are simplified, and there is no skin deformation at the joints
-  (joint spheres hide the seams). Appearance (`render/appearance.js`, `render/FighterModel.js`)
-  is separate from combat data (`sim/characters.js`). A detailed rigged model can replace
-  `FighterModel` for any fighter, loaded with `GLTFLoader` and an `AnimationMixer`, while the
-  combat data stays unchanged.
-- Animations are hand-keyed procedural poses, not motion capture.
+- **The character models are stylised (mushrooms, bear, cobra, chibi), not the realistic
+  humans of the concept sheet.** They are the models supplied for the roster, so fighter names
+  and moves were kept while the bodies changed. Renaming the fighters is a data-only change in
+  `js/sim/characters.js`.
+- **Strike / visual alignment**: collision is authoritative and unchanged. The animation steers
+  the striking fist or foot onto the hit point: horizontally, and inside the attack level's height
+  band. Short-limbed models lunge (up to 0.3 m; Ren up to 0.6 m, Caio 0.4 m) and hop (Ren up to
+  0.6 m) to get there. Measured in the browser (`tests/e2e/strike-alignment.cjs`), at contact
+  **54/54** hand and foot strikes have the visible limb within the hit radius and inside the
+  height band (before this work: 38/55 and 41/55). Ren's chibi body lunges visibly on every
+  strike: his move data assumes limbs 1.5–2.5× longer than his model's.
+- No finger bones (the source meshes are single sculpts); hands keep their modelled grip.
+  Weapons in the source meshes (Maya's blade, Ren's sword) are kept and ride the hand.
+- **Animation is still procedural**: hand-keyed key poses with timed trajectories,
+  retargeted to each skeleton. There is no motion capture and no authored clips, and the models
+  came without any animation. Each attack has preparation, acceleration, contact,
+  follow-through and recovery phases on the move's frame clock. String follow-ups wind up from
+  where the previous strike ended. Walk cycles follow the distance actually travelled. Feet are
+  planted and released by a timeline signal, and the skinned models lock planted feet in place.
+  See *Remaining animation-asset needs* below.
 - Audio is synthesised placeholder audio. The announcer uses the browser's speech synthesis,
   which varies by OS. Recorded SFX, voice and music should replace it.
-- One stage. There is no breakable floor or wall, story, ranked mode, replays or
-  input-recording dummy.
+- One stage. There is no breakable floor or wall, story, ranked mode or replays.
 - Frame data, damage and CPU win rates are unbalanced starting values that need playtesting.
 - Keyboard layout differs from the brief: the original layout is kept (P1: WASD move,
   U/I/J/K = 1/2/3/4, O throw, L guard, Esc pause) instead of arrows + J/K/U/I + C. Holding
   down crouches; there is no separate C crouch key. Every key can be remapped.
 - Bound/tailspin, ground-bounce, back-turned states and chip damage are not modelled.
+
+### Remaining animation-asset needs
+
+The combat, timing and alignment systems are in place; what would raise animation quality further
+is real motion data, which this project does not have:
+- **Authored or motion-captured clips** for each fighter's stance, walk, run, sidestep, guard and
+  hit reactions, and for every attack (prep / strike / recovery): about 20–30 clips per fighter
+  on the shared skeleton (`hips, spine, chest, neck, head, clavicle/upperarm/forearm/hand,
+  thigh/shin/foot/toe` with `_L` / `_R`, plus `tail1..n` for the cobra and bear), as glTF
+  animations. The animation system would sample them on the move's frame clock and keep the
+  current strike steering and foot locking on top.
+- **Ren's model** (chibi proportions) would need a variant with longer limbs, or attack data
+  tuned to its reach, to remove the visible lunges.
+- **Finger bones / hand poses** (fist, open palm, knife hand) for all six models.
+- **Paired throw clips**: thrower and victim animations that match each other.
 
 ## 8. Known limitations & performance requirements
 
@@ -365,6 +441,19 @@ A deterministic test checks these tendencies. Win rates between fighters are not
   **A 60 FPS frame rate on real hardware was not measured here**: the test environment only had
   CPU software rendering (SwiftShader), which ran at about 10 FPS. CPU cost of simulation plus
   animation was measured at about **0.03 ms per frame**, so frame rate depends on the GPU.
+- **Measured in this environment** (`tests/e2e/visual-metrics.cjs`): CPU-vs-CPU, 900 simulation
+  frames, 1280×720, headless Chromium with **software rendering (SwiftShader)**, so absolute fps
+  says nothing about real GPUs:
+
+  | Matchup | fps (prototype bodies / skinned models) | Planted-foot glide, mean mm per frame (prototype / skinned) | p95 |
+  |---|---|---|---|
+  | Ren vs Maya | 18.4 / 17.8 | 6.1 / 5.1 | 25.8 / 19.6 |
+  | Sora vs Leila | 18.5 / 18.2 | 10.2 / 5.4 | 47.4 / 31.1 |
+  | Viktor vs Caio | 19.4 / 18.3 | 15.5 / 8.5 | 57.5 / 37.0 |
+
+  "Planted" means the animation timeline's plant weight is above 0.5. The remaining glide comes
+  from block and hit pushback, which slides the whole body, and from re-anchoring when a lunge
+  overstretches a locked leg. Character loading takes about 3 s locally (11 MB of GLBs).
 - Browsers only reveal gamepads after a button press on that pad. Button numbering for
   non-standard (DirectInput) pads varies by browser and OS, which is why the remap screen exists.
 - Firefox on Linux and Safari can report different axis and hat layouts. Use the Controllers
@@ -374,29 +463,55 @@ A deterministic test checks these tendencies. Win rates between fighters are not
 
 ## 9. Test checklist (what was actually tested)
 
-Automated, Node (`npm test`), **83/83 passing**:
-- [x] **Every strike of all six fighters** (7 each, 42 in total): it hits exactly once for its
-  listed damage, the correct guard blocks it with no chip damage, highs whiff over a crouch,
-  mids beat crouch guard, lows beat standing guard, and out of range it whiffs and completes
-  its full recovery.
-- [x] Each fighter has a signature jab on 1, basics on 2/3/4 and three directional signatures,
-  and every attack has startup, active, recovery, damage, level and stun data.
-- [x] Throws: 12 damage standard, 18 for Foundry Drop; the Throw button breaks; the wrong button
-  doesn't; throws miss crouchers; no re-throw during the get-up protection window.
-- [x] Check Hook's startup bonus, Sora's Axis Heel side step, and Caio's idle granting no evasion.
-- [x] Measured advantage matches the data (jab on hit, Harbor Palm on block). Mashing during
-  recovery does not restart an attack.
-- [x] Directional attacks beat plain ones; sidestep beats linear attacks but not tracking ones.
-- [x] Bodies never overlap or leave the arena; fighters keep facing each other; each player's
-  input moves only their own fighter.
-- [x] Match rules: 100 HP, 60 s rounds, first to two; KO'd fighters ignore input; time-out
-  goes to the healthier fighter; next round resets all state.
-- [x] CPU-vs-CPU matches finish for all six fighters; CPU personality tendencies.
-- [x] Kai (bonus): launcher juggles end with scaled damage, strings, parry, Rage Art armour,
-  wall splat. Training dummy and reset.
+Automated, Node (`npm test`), **135/135 passing**:
+- [x] **Every strike of all seven fighters**: it hits exactly once for its listed damage, the
+  correct guard blocks it with no chip damage, highs whiff over a crouch, mids beat crouch guard,
+  lows beat standing guard, and out of range it whiffs and completes its full recovery.
+- [x] **Every advertised combo route** (`tests/combos.test.js`, 21 routes):
+  - recorded damage equals measured damage;
+  - launch and counter-hit routes land in the 25–35 target (main roster);
+  - **true combos and juggles** land fully against a defender that guards at the earliest legal
+    frame, at 0.7 / 0.85 / 1.0 m, and against every defender character;
+  - launchers can be blocked;
+  - **strings**: the gapped hit is blocked by the earliest guard (except Caio's gap-on-block
+    string), and on block the documented defence (jab interrupt / duck / correct guard) beats it;
+  - **counter-hit routes** do not continue from a normal hit.
+- [x] **Input** (`tests/input.test.js`):
+  - findMotion finds a newer motion behind an older one;
+  - repeated qcf+1 works, and a used motion cannot fire twice;
+  - a buffered attack comes out on the first free frame, and an interruption drops it with no
+    stale attack afterwards;
+  - a punish entered in the last blockstun frames comes out on the first free frame and lands,
+    while an early press does not buffer;
+  - mashing never bypasses recovery;
+  - throws and knockdowns invalidate earlier inputs, and wake-up inputs don't fire attacks;
+  - nothing re-floats an opponent after a finisher;
+  - wall loops end within the 60-frame cap;
+  - routes work with the fighters on swapped sides;
+  - new rounds clear buffers;
+  - outcomes are identical whether rendering happens every 1, 2, 4 or 7 simulation frames (no
+    feedback from presentation);
+  - animation resyncs after a reset.
+- [x] **CPU and practice** (`tests/practice.test.js`):
+  - delayed observation, and reactions per attack execution;
+  - punishers fast enough (with margin) that actually land;
+  - a blocked launcher is not followed up, and a confirmed route lands fully;
+  - dummy modes (no guard, guard after first hit, random guard, counter hit);
+  - record and playback;
+  - a punish-drill PUNISHED verdict;
+  - combo demonstrations land fully.
+- [x] Throws (12 standard, 18 Foundry Drop, break, miss crouchers, no re-throw on get-up), Check
+  Hook bonus, Axis Heel side step, Caio's sway grants no evasion, measured advantage matches
+  data, sidestep vs tracking, arena and bodies, match rules, CPU-vs-CPU matches finish,
+  personality tendencies, Kai's launcher, parry, Rage Art and wall splat.
+- [x] **Assets**: every character GLB is valid, with a skeleton, weights and a manifest entry.
 
+Automated, browser:
+- `tests/e2e/strike-alignment.cjs`: **54/54** hand and foot strikes have the visible limb within
+  the hit radius and inside the attack level's height band at contact (38/55 and 41/55 before).
+- `tests/e2e/visual-metrics.cjs`: frame rate and foot glide (results in section 8).
 Automated, browser (`tests/e2e/browser-e2e.cjs`, headless Chromium, **two emulated gamepads**,
-one `standard` and one DirectInput with a hat switch), **25/25 passing**:
+one `standard` and one DirectInput with a hat switch), **28/28 passing**:
 - [x] Both pads detected and assigned to P1 and P2; hat switch auto-detected; menu navigation
 - [x] Each pad drives only its own fighter; both move at once; signature jabs on both mappings
 - [x] Hits update the HUD; Start pauses; the sim is frozen while paused; pause menu input
@@ -404,7 +519,9 @@ one `standard` and one DirectInput with a hat switch), **25/25 passing**:
   both players; remapping is saved
 - [x] KO ends the round; round 2 resets health; rematch restarts without reload
 - [x] All six fighters selected through the select screen and rendered in matches
-- [x] The reference sheet loads, with no HTTP errors and no page errors
+- [x] All six character GLBs load; a mirror match uses two independent skeletons that animate
+  independently
+- [x] The portrait sheet loads, with no HTTP errors and no page errors
 
 Manual and visual (screenshots in headless Chromium):
 - [x] All six fighters' idle stances and close-ups compared against the reference sheet

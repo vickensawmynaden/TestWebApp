@@ -2,6 +2,7 @@
 import { World } from './world.js';
 import { CHARACTERS } from './characters.js';
 import { CpuAI, TrainingDummy } from './ai.js';
+import { RouteBot } from './routes.js';
 import { FPS, DEFAULT_RULES } from './constants.js';
 
 export class Match {
@@ -48,7 +49,19 @@ export class Match {
     const w = this.world;
     const ins = [inputs[0], inputs[1]];
     if (this.cpu) ins[1] = this.cpu.input(w, w.fighters[1]);
-    if (this.dummy) ins[1] = this.dummy.input(w, w.fighters[1]);
+    if (this.dummy) {
+      ins[1] = this.dummy.input(w, w.fighters[1], inputs[0]);
+      if (this.dummy.mode === 'record') ins[0] = null;           // the player is driving the dummy
+    }
+    if (this.demo) {
+      // Practice combo demonstration: P1 is driven by the route executor against a passive,
+      // unguarded dummy (counter-hit routes get a counter hit).
+      ins[0] = this.demo.input(w, w.fighters[0]);
+      ins[1] = null;
+      w.fighters[1].noGuard = true;
+      w.trainingCounterAll = this.demo.route.kind === 'ch';
+      if (this.demo.done && w.fighters[0].isNeutral()) { this.demo = null; this.emit('announce', { text: 'DEMO END', sound: null, small: true }); }
+    }
     this.phaseT++;
     switch (this.phase) {
       case 'intro':
@@ -158,8 +171,38 @@ export class Match {
       this.calm[i] = calm ? this.calm[i] + 1 : 0;
       if (this.calm[i] === 45 && f.hp < f.def.hp) { f.hp = f.def.hp; f.displayHp = f.hp; f.rage = false; f.rageUsed = false; }
     });
+    this.watchPunishDrill();
     if (p1raw && p1raw.reset && !this.resetHeld) this.resetTraining();
     this.resetHeld = !!(p1raw && p1raw.reset);
+  }
+
+  // Punish drill verdict: after the dummy's unsafe attack is blocked, the player either hits the
+  // dummy before it recovers (PUNISHED) or it recovers first (MISSED).
+  watchPunishDrill() {
+    const d = this.dummy;
+    if (!d || d.mode !== 'punish drill') { this.drillWatch = null; return; }
+    const dm = this.world.fighters[1];
+    let wch = this.drillWatch;
+    if (wch && wch.done && dm.attackSeq !== wch.seq) wch = this.drillWatch = null;
+    if (!wch && dm.state === 'attack' && dm.attackSeq === d.drill.seq && dm.moveResult === 'block') {
+      wch = this.drillWatch = { seq: dm.attackSeq, move: dm.move.name, block: dm.move.block, done: false };
+    }
+    if (!wch || wch.done) return;
+    if (dm.combo.active && dm.combo.hits > 0) { wch.done = true; this.punishes = (this.punishes || 0) + 1; this.emit('announce', { text: `PUNISHED ${wch.move} (${wch.block} on block)`, sound: null, small: true }); }
+    else if (dm.isNeutral()) { wch.done = true; this.emit('announce', { text: `MISSED: ${wch.move} is ${wch.block} on block`, sound: null, small: true }); }
+  }
+
+  // Practice: perform one of player 1's authored combo routes on the dummy.
+  playComboDemo(routeId) {
+    const f = this.world.fighters[0];
+    const route = (f.def.combos || []).find((r) => r.id === routeId);
+    if (!route) return false;
+    this.resetTraining();
+    const dm = this.world.fighters[1];
+    this.world.fighters[0].pos.x = dm.pos.x - (route.dist ?? 1.0) * Math.sign(dm.pos.x - f.pos.x || 1);
+    this.demo = new RouteBot(route);
+    this.emit('announce', { text: `${route.name}: ${route.notation}`, sound: null, small: true });
+    return true;
   }
 
   resetTraining() {

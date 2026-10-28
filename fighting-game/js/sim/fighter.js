@@ -1,23 +1,9 @@
 // Fighter: per-fighter state, input history and move lookup. Pure data + small helpers,
 // the frame-by-frame rules live in world.js so both fighters can be resolved together.
-import { parseCommand, commandPriority } from './commands.js';
 import { INPUT_BUFFER, B1, B2, B3, B4 } from './constants.js';
-import { ATTACKS } from '../render/poses.js';
+import { normalizeMoves } from './movedata.js';
 
-const LEVEL_HEIGHT = { high: 1.45, mid: 1.15, low: 0.25 };
-
-// Where a move's hitbox sits at full extension, as [right, up, forward] in the fighter's model
-// space. It is taken from the striking limb's IK target in the attack's contact pose, so the
-// hitbox follows the fist / foot the animation actually extends (shared rig data in poses.js).
-export function limbHitPoint(m, scale = 1) {
-  let p = m.hitPoint;
-  if (!p) {
-    const pose = ATTACKS[m.anim]?.hit;
-    const endEffector = ['lHand', 'rHand', 'lFoot', 'rFoot'].includes(m.limb);
-    p = endEffector && pose && pose[m.limb] ? pose[m.limb] : [0, LEVEL_HEIGHT[m.level] || 1.15, m.reach || 0.6];
-  }
-  return [p[0] * scale, p[1] * scale, p[2] * scale];
-}
+export { limbHitPoint } from './hitpoints.js';
 
 const NEUTRAL_STATES = new Set(['idle', 'walkF', 'walkB', 'crouch', 'run']);
 
@@ -25,21 +11,10 @@ export class Fighter {
   constructor(def, index) {
     this.def = def;
     this.index = index;
-    this.moveMap = new Map();
-    this.commandMoves = [];
-    for (const m of def.moves) {
-      const move = { ...m, spec: parseCommand(m.cmd) };
-      move.total = move.startup + (move.active || 1) + move.recovery - 1;
-      // Explicit hit / block stun (counted from the first active frame) -> frame advantage.
-      const afterFirstActive = (move.active || 1) - 1 + move.recovery;
-      if (move.hitstun !== undefined) move.hit = move.onHit ? 0 : move.hitstun - afterFirstActive;
-      if (move.blockstun !== undefined) move.block = move.blockstun - afterFirstActive;
-      if (move.level !== 'throw' && move.level !== 'parry') move.hitPointLocal = limbHitPoint(move, def.scale || 1);
-      move.stringSpecs = (move.strings || []).map(s => ({ ...s, spec: parseCommand(s.cmd) }));
-      this.moveMap.set(move.id, move);
-      if (!move.inString) this.commandMoves.push(move);
-    }
-    this.commandMoves.sort((a, b) => commandPriority(b.spec) - commandPriority(a.spec));
+    // Per-instance copies of the normalised move data (see movedata.js).
+    const { map, commandMoves } = normalizeMoves(def);
+    this.moveMap = map;
+    this.commandMoves = commandMoves;
     this.airMove = this.commandMoves.find(m => m.spec.special === 'air') || null;
     this.pos = { x: 0, y: 0, z: 0 };
     this.prevPos = { x: 0, y: 0, z: 0 };
@@ -67,6 +42,10 @@ export class Fighter {
     this.buffered = null;            // attack buffered during recovery
     this.stun = 0;
     this.buf = [];
+    this.inputN = 0;                 // stamp of the newest input-history entry
+    this.minInputN = 0;              // inputs stamped at or before this are ignored (interruptions)
+    this.motionN = 0;                // last frame of the most recently consumed motion command
+    this.attackSeq = 0;              // increments on every attack execution (AI / training tracking)
     this.prevHeld = 0;
     this.carryPress = 0;
     this.guardBtn = false;
@@ -104,7 +83,7 @@ export class Fighter {
     this.carryPress = 0;
     this.prevHeld = held;
     this.guardBtn = guardBtn;
-    this.buf.push({ dir, press, held });
+    this.buf.push({ dir, press, held, n: ++this.inputN });
     if (this.buf.length > INPUT_BUFFER) this.buf.shift();
   }
 
@@ -114,6 +93,9 @@ export class Fighter {
     this.prevHeld = held;
     this.guardBtn = guardBtn;
   }
+
+  // Forget every input up to now: after an interruption no earlier press or motion may fire.
+  invalidateInputs() { this.minInputN = this.inputN; }
 
   // Previous frame's direction (for tap detection).
   prevDir(n = 1) { const i = this.buf.length - 1 - n; return i >= 0 ? this.buf[i].dir : 5; }
@@ -126,7 +108,7 @@ export class Fighter {
       case 'crouch': return 'crouch';
       case 'block': return this.guard === 'crouch' ? 'crouch' : 'stand';
       case 'hit': return this.hitLevel === 'low-crouch' ? 'crouch' : 'stand';
-      case 'crumple': return this.t > 30 ? 'down' : 'crouch';
+      case 'crumple': return this.t > 44 ? 'down' : 'crouch';   // hittable (follow-ups launch) for 44 of its 52 frames
       case 'getup': return this.t < 8 ? 'crouch' : 'stand';
       case 'attack': {
         const m = this.move;

@@ -6,9 +6,11 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Stage, buildEnvScene } from './Stage.js';
 import { FighterModel } from './FighterModel.js';
+import { SkinnedFighter, hasSkinned } from './SkinnedFighter.js';
 import { Animator } from './Animator.js';
 import { CameraRig } from './CameraRig.js';
 import { Effects } from './Effects.js';
+import { DebugOverlay } from './DebugOverlay.js';
 import { APPEARANCES } from './appearance.js';
 
 const TRAIL_COLORS = Object.fromEntries(Object.entries(APPEARANCES).map(([k, a]) => [k, a.trail]));
@@ -34,6 +36,10 @@ export class GameView {
     pmrem.dispose();
     this.stage = new Stage(this.scene, quality);
     this.effects = new Effects(this.scene);
+    this.debug = new DebugOverlay(this.scene);
+    // ?align=off disables steering the visible strike onto the hit point (for before/after checks)
+    this.alignStrikes = new URLSearchParams(location.search).get('align') !== 'off';
+    if (new URLSearchParams(location.search).get('debug') === 'hitboxes') this.debug.toggle(true);
     this.models = []; this.animators = [];
     this.tmpA = new THREE.Vector3(); this.tmpB = new THREE.Vector3(); this.tmpL = new THREE.Vector3();
     this.composer = new EffectComposer(this.renderer);
@@ -70,7 +76,8 @@ export class GameView {
     this.models = []; this.animators = [];
     match.chars.forEach((c, i) => {
       const def = match.world.fighters[i].def;
-      const m = new FighterModel(c, def);
+      // Rigged glTF character when available; the procedural model is the fallback (and Kai's body).
+      const m = hasSkinned(c) ? new SkinnedFighter(c, def) : new FighterModel(c, def);
       this.scene.add(m.root);
       this.models.push(m);
       this.animators.push(new Animator(c));
@@ -94,6 +101,7 @@ export class GameView {
   // Presentation-side reactions to simulation events.
   onEvent(e) {
     const fx = this.effects;
+    this.debug.onEvent(e);
     switch (e.type) {
       case 'hit': fx.hit(e.pos, e.heavy, false); break;
       case 'counter': fx.hit(e.pos, true, true); break;
@@ -125,7 +133,7 @@ export class GameView {
       m.root.position.copy(ps[i]);
       m.root.rotation.y = Math.atan2(fx, fz);
       const pose = this.animators[i].update(f, w, w.hitstop > 0 ? 0 : alpha);
-      m.applyPose(pose);
+      m.applyPose(pose, this.alignStrikes ? f : null);
       // Trails on active strikes
       const mv = f.state === 'attack' ? f.move : null;
       const trailOn = !!(mv && mv.limb && mv.limb !== 'body' && f.mf >= mv.startup - 4 && f.mf <= mv.startup + mv.active + 1);
@@ -139,6 +147,7 @@ export class GameView {
         this.pendingStomp = null;
       }
     });
+    this.debug.update(w, this.models);
     const cm = this.cameraMode(match);
     this.rig.update(dt, { a: pa, b: pb, faceA: fa.face, faceB: fb.face, camDir: w.camDir, ...cm });
     this.stage.update(dt, { x: (pa.x + pb.x) / 2, z: (pa.z + pb.z) / 2 }, this.camera.position);
