@@ -4,6 +4,7 @@ import { Zombie } from './zombie.js';
 import { Sfx } from './audio.js';
 import { radial } from './textures.js';
 import { loadModels } from './models.js';
+import { Avatar } from './avatar.js';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
@@ -144,7 +145,8 @@ const vm = (() => {
   for (let i = 0; i < 3; i++) { const f = B(0.044, 0.02, 0.024, skin, -0.004, -0.04 - i * 0.024, 0.02 + i * 0.006, hand); f.rotation.x = -0.25; }
   B(0.022, 0.017, 0.055, skin, -0.004, -0.014, 0.0, hand); // trigger finger
   const thumb = B(0.012, 0.016, 0.05, skin, -0.02, -0.014, 0.03, hand); thumb.rotation.y = 0.1;
-  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.42, 10), skin);
+  const sleeve = new THREE.MeshStandardMaterial({ color: 0x2f4f78, roughness: 0.8 });
+  const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.046, 0.42, 10), sleeve);
   const dir = new THREE.Vector3(0.18, -0.38, 0.9).normalize();
   arm.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
   arm.position.set(0.02, -0.1, 0.09).addScaledVector(dir, 0.21); hand.add(arm);
@@ -162,6 +164,9 @@ const vm = (() => {
 const RELOAD_TIME = 1.35, MAG = 12, MAX_RESERVE = 120;
 const player = { pos: new THREE.Vector3(0, 0, 2), yaw: 0, pitch: 0 };
 let state = 'menu';
+let view = 'third';
+const avatar = new Avatar(scene);
+let camT = 1;
 let zombies = [];
 let pickups = [];
 let hitTargets = [];
@@ -484,6 +489,7 @@ addEventListener('keydown', e => {
   if (state !== 'play') return;
   if (e.code === 'KeyR') startReload();
   if (e.code === 'KeyF') toggleLight();
+  if (e.code === 'KeyV') toggleView();
   if (e.code === 'Escape' || e.code === 'KeyP') pause();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
@@ -501,6 +507,7 @@ addEventListener('mouseup', e => { if (e.button === 0) input.firing = false; });
 document.addEventListener('pointerlockchange', () => {
   if (!document.pointerLockElement && state === 'play' && !isTouch) pause();
 });
+function toggleView() { view = view === 'third' ? 'first' : 'third'; sfx.click(900, 0.15); }
 function toggleLight() { player.light = !player.light; flashlight.visible = player.light; sfx.click(1200, 0.2); $('btn-light').classList.toggle('active', !player.light); }
 
 // touch: left stick, drag anywhere else to look, fire button also drags to aim
@@ -552,6 +559,7 @@ addEventListener('touchcancel', endTouch);
 const tap = (id, fn) => $(id).addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); fn(); }, { passive: false });
 tap('btn-reload', startReload);
 tap('btn-light', toggleLight);
+tap('btn-view', toggleView);
 tap('btn-sprint', () => { player.sprintToggle = !player.sprintToggle; $('btn-sprint').classList.toggle('active', player.sprintToggle); });
 tap('btn-pause', () => pause());
 
@@ -663,9 +671,32 @@ function placeCamera(dt) {
   const side = Math.cos(fx.bobT) * 0.025 * Math.min(1, input.moveLen);
   const sh = fx.shake * 0.12;
   right.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
-  const eye = state === 'dead' ? Math.max(0.4, 1.62 - (player.deadT || 0) * 2.5) : 1.62;
-  camera.position.set(player.pos.x + right.x * side, eye + bob, player.pos.z + right.z * side);
-  camera.rotation.set(player.pitch + fx.recoilPitch + (Math.random() - .5) * sh, player.yaw + (Math.random() - .5) * sh, (Math.random() - .5) * sh * 0.5 + Math.cos(fx.bobT) * 0.004);
+  const third = view === 'third' && avatar.ok;
+  camera.rotation.set(player.pitch + fx.recoilPitch + (Math.random() - .5) * sh, player.yaw + (Math.random() - .5) * sh, (Math.random() - .5) * sh * 0.5 + (third ? 0 : Math.cos(fx.bobT) * 0.004));
+  if (third) {
+    // over the right shoulder, pulled in when a wall or ceiling is in the way
+    camera.getWorldDirection(fwd);
+    const px = player.pos.x, py = 1.55 - (state === 'dead' ? Math.min(1.1, (player.deadT || 0) * 1.5) : 0), pz = player.pos.z;
+    const portrait = camera.aspect < 1;
+    const back = (portrait ? 3.1 : 2.4) - fx.sprint * 0.3, side = portrait ? 0.5 : 0.85, up = portrait ? 0.22 : 0.2;
+    const dx = right.x * side - fwd.x * back, dy = up - fwd.y * back, dz = right.z * side - fwd.z * back;
+    let t = 1;
+    for (let k = 1; k <= 24; k++) {
+      const f = k / 24;
+      if (cameraBlocked(px + dx * f, py + dy * f, pz + dz * f)) { t = Math.max(0.12, f - 1 / 24 - 0.04); break; }
+    }
+    camT = t < camT ? t : camT + (t - camT) * Math.min(1, dt * 5);
+    camera.position.set(px + dx * camT, py + dy * camT + bob * 0.3, pz + dz * camT);
+  } else {
+    const eye = state === 'dead' ? Math.max(0.4, 1.62 - (player.deadT || 0) * 2.5) : 1.62;
+    camera.position.set(player.pos.x + right.x * side, eye + bob, player.pos.z + right.z * side);
+  }
+  const relK = player.reloading > 0 ? Math.sin((1 - player.reloading / RELOAD_TIME) * Math.PI) : 0;
+  avatar.update(dt, {
+    visible: third && camT > 0.3, x: player.pos.x, z: player.pos.z, yaw: player.yaw, pitch: player.pitch,
+    move: Math.min(1, input.moveLen), sprint: fx.sprint, recoil: fx.recoil, reload: relK, hurt: fx.hurt,
+    flash: fx.flashT > 0, dead: state === 'dead', deadT: player.deadT || 0,
+  });
 
   // viewmodel
   fx.swayX *= Math.exp(-dt * 10); fx.swayY *= Math.exp(-dt * 10);
@@ -684,13 +715,25 @@ function placeCamera(dt) {
   vm.flash.position.set(vm.root.position.x, vm.root.position.y + 0.05, vm.root.position.z - 0.15);
   vm.flash.intensity = fl ? 3 : 0;
   camera.getWorldDirection(fwd);
-  muzzleLight.position.copy(camera.position).addScaledVector(fwd, 0.7);
+  if (third) avatar.muzzle(muzzleLight.position);
+  else muzzleLight.position.copy(camera.position).addScaledVector(fwd, 0.7);
   muzzleLight.intensity = fl ? 28 : 0;
   fx.flashT -= dt;
 
   moon.position.set(player.pos.x - 18, 40, player.pos.z + 14);
   moon.target.position.set(player.pos.x, 0, player.pos.z);
   sfx.setListener(camera.position, fwd);
+}
+
+const MANOR = { x0: -14, x1: 14, z0: -40, z1: -12 };
+function cameraBlocked(x, y, z) {
+  if (y < 0.15) return true;
+  if (y > 3.15 && x > MANOR.x0 && x < MANOR.x1 && z > MANOR.z0 && z < MANOR.z1) return true;
+  const r = 0.18;
+  for (const s of world.solids) {
+    if (x > s.x0 - r && x < s.x1 + r && z > s.z0 - r && z < s.z1 + r && y < (s.h ?? 3.4)) return true;
+  }
+  return false;
 }
 
 function updateLights(t) {
@@ -740,14 +783,14 @@ function frame(now) {
   placeCamera(state === 'paused' ? 0 : dt);
   renderer.clear();
   renderer.render(scene, camera);
-  if (state !== 'dead') { renderer.clearDepth(); renderer.render(gunScene, gunCam); }
+  if (state !== 'dead' && !(view === 'third' && avatar.ok)) { renderer.clearDepth(); renderer.render(gunScene, gunCam); }
 }
 resetGame();
 const playBtn = $('play');
 playBtn.disabled = true; playBtn.textContent = 'LOADING…';
 loadModels(window.MODEL_BASE || 'models/')
   .catch(err => console.warn('Character models failed to load; using fallback zombies.', err))
-  .finally(() => { playBtn.disabled = false; playBtn.textContent = 'ENTER THE ESTATE'; window.__modelsReady = true; });
+  .finally(() => { avatar.init(); playBtn.disabled = false; playBtn.textContent = 'ENTER THE ESTATE'; window.__modelsReady = true; });
 $('hud').classList.add('hidden');
 $('message').classList.remove('show');
 requestAnimationFrame(frame);

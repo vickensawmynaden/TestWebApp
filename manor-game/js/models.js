@@ -6,8 +6,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // Model-space measurements (metres, model faces +Z, feet at y=0).
 export const RIGS = {
-  walker: {
-    file: 'lawman', scale: 0.95, radius: 0.3, tint: 0xb4bea6,
+  player: {
+    file: 'lawman', scale: 0.95, radius: 0.3, tint: 0xffffff,
     hipY: 0.72, shoulderY: 1.45, armX: 0.31, armMinY: 0.62,
     body: { c: [0, 0.82, 0], s: [0.62, 1.5, 0.42] }, head: { c: [0, 1.72, 0.03], s: [0.32, 0.36, 0.34] },
   },
