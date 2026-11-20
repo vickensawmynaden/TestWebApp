@@ -45,7 +45,10 @@ export class Zombie {
     this.headTilt = (Math.random() - 0.5) * 0.6;
     this.limp = Math.random() < 0.4 ? 0.3 + Math.random() * 0.4 : 0;
     this.parts = [];
-    this.useModel = hasModel(type);
+    // regular walkers reuse the werewolf or ogre mesh, a bit smaller, with a shambling gait
+    this.modelKey = type === 'walker' ? (Math.random() < 0.55 ? 'runner' : 'brute') : type;
+    this.sizeMul = type === 'walker' ? (this.modelKey === 'brute' ? 0.78 : 0.9) : 1;
+    this.useModel = hasModel(this.modelKey);
     if (this.useModel) this.buildModel(); else this.build();
   }
 
@@ -109,11 +112,11 @@ export class Zombie {
   }
 
   buildModel() {
-    const { mesh, u, rig } = makeModelMesh(this.type);
+    const { mesh, u, rig } = makeModelMesh(this.modelKey);
     this.u = u; this.rig = rig;
     const root = new THREE.Group();
     root.rotation.order = 'YXZ';
-    root.scale.setScalar(rig.scale);
+    root.scale.setScalar(rig.scale * this.sizeMul);
     const lean = new THREE.Group(); lean.position.y = rig.hipY; root.add(lean); this.lean = lean;
     mesh.position.y = -rig.hipY; lean.add(mesh);
     for (const part of ['body', 'head']) {
@@ -161,7 +164,7 @@ export class Zombie {
     this.root.rotation.y = this.yaw;
   }
 
-  get radius() { return this.useModel ? this.rig.radius : 0.32 * this.def.scale; }
+  get radius() { return this.useModel ? this.rig.radius * this.sizeMul : 0.32 * this.def.scale; }
 
   animate(dt, moving, speed) {
     if (this.useModel) return this.animateModel(dt, moving, speed);

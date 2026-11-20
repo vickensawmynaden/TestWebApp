@@ -4,8 +4,9 @@ A first-person zombie survival game that runs in the browser (Three.js, no build
 You start on the drive of a fogbound estate: explore the grounds, the graveyard, the tool shed
 and the manor's lamp-lit halls while waves of undead close in.
 
-- You play the **Lawman**, seen over the shoulder (press V / tap CAM for first person).
-- **Undead walkers** shamble, **werewolves** sprint at you, **ogres** soak up bullets.
+- First-person by default; press V / tap CAM to see the **Lawman** over the shoulder.
+- Every enemy uses the werewolf or ogre model: smaller ones shamble, **werewolves** sprint at you,
+  full-size **ogres** soak up bullets.
   The character meshes in `models/` have no skeleton, so `js/models.js` swings their legs and
   arms in the vertex shader around hip/shoulder pivots measured from each mesh. Invisible boxes
   act as body/head hitboxes.

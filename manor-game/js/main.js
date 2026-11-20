@@ -164,7 +164,7 @@ const vm = (() => {
 const RELOAD_TIME = 1.35, MAG = 12, MAX_RESERVE = 120;
 const player = { pos: new THREE.Vector3(0, 0, 2), yaw: 0, pitch: 0 };
 let state = 'menu';
-let view = 'third';
+let view = 'first';
 const avatar = new Avatar(scene);
 let camT = 1;
 let zombies = [];
