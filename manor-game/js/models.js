@@ -29,7 +29,9 @@ export async function loadModels(base = 'models/') {
   const loader = new GLTFLoader();
   const entries = Object.entries(RIGS);
   await Promise.all(entries.map(async ([type, rig]) => {
-    const gltf = await loader.loadAsync(`${base}${rig.file}.glb`);
+    const gltf = window.MODEL_EXT === '.json'
+      ? await loader.parseAsync(await jsonToGlb(`${base}${rig.file}.json`), base)
+      : await loader.loadAsync(`${base}${rig.file}.glb`);
     let mesh = null;
     gltf.scene.traverse(o => { if (o.isMesh && !mesh) mesh = o; });
     if (!mesh) throw new Error(`no mesh in ${rig.file}`);
@@ -41,6 +43,25 @@ export async function loadModels(base = 'models/') {
     loaded[type] = { geo, map: src.map };
   }));
   return true;
+}
+
+// Hosts that won't serve .glb get a .gltf-as-.json with a base64 buffer and an external .jpg.
+// Rebuild a GLB in memory so the buffer never goes through fetch() as a data: URI.
+async function jsonToGlb(url) {
+  const j = await (await fetch(url)).json();
+  const bin = Uint8Array.from(atob(j.buffers[0].uri.split(',')[1]), c => c.charCodeAt(0));
+  delete j.buffers[0].uri;
+  let json = new TextEncoder().encode(JSON.stringify(j));
+  const jp = (4 - (json.length % 4)) % 4, bp = (4 - (bin.length % 4)) % 4;
+  const total = 12 + 8 + json.length + jp + 8 + bin.length + bp;
+  const out = new Uint8Array(total), dv = new DataView(out.buffer);
+  dv.setUint32(0, 0x46546C67, true); dv.setUint32(4, 2, true); dv.setUint32(8, total, true);
+  dv.setUint32(12, json.length + jp, true); dv.setUint32(16, 0x4E4F534A, true);
+  out.set(json, 20); out.fill(0x20, 20 + json.length, 20 + json.length + jp);
+  let o = 20 + json.length + jp;
+  dv.setUint32(o, bin.length + bp, true); dv.setUint32(o + 4, 0x004E4942, true);
+  out.set(bin, o + 8);
+  return out.buffer;
 }
 
 export function hasModel(type) { return !!loaded[type]; }
