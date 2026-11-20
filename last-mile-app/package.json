@@ -1,0 +1,21 @@
+{
+  "name": "last-mile-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Native Android/iOS shell (Capacitor) for the Last Mile zombie runner in ../manor-game.",
+  "type": "module",
+  "scripts": {
+    "web": "node scripts/copy-web.js",
+    "sync": "npm run web && npx cap sync android",
+    "sync:ios": "npm run web && npx cap sync ios",
+    "android:apk": "npm run sync && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.2",
+    "@capacitor/core": "8.6.2",
+    "@capacitor/ios": "8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.2"
+  }
+}

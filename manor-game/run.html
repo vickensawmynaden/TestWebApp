@@ -7,6 +7,11 @@
   <title>Last Mile</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/run.css">
+  <link rel="manifest" href="run.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <script type="importmap">
     { "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
   </script>
@@ -33,7 +38,7 @@
   </div>
 
   <div id="touch" class="hidden">
-    <div id="steer-hint">DRAG TO STEER</div>
+    <div id="steer-hint">HOLD LEFT / RIGHT TO STEER</div>
     <button id="btn-fire" class="tbtn fire run-fire" aria-label="Fire"></button>
     <button id="btn-pause" class="tbtn tiny" aria-label="Pause">II</button>
   </div>
@@ -48,9 +53,10 @@
         <div><kbd>Click</kbd> fire</div><div><kbd>Space</kbd> fire</div>
       </div>
       <div class="controls touch-only">
-        <div>Drag left / right: steer</div><div>Red button: fire</div>
+        <div>Hold left / right side: steer</div><div>Red button: fire</div>
       </div>
       <p class="hint">You run without stopping. Weave through the dead, grab the glowing supply crates for guns and ammo. One touch and it's over.</p>
+      <button id="steer-mode" class="steer-mode touch-only">STEERING: HOLD LEFT / RIGHT</button>
       <p class="hint" id="menu-best"></p>
     </div>
   </div>

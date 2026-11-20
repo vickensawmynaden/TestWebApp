@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Last Mile</string>
+    <string name="title_activity_main">Last Mile</string>
+    <string name="package_name">com.lastmile.zombierunner</string>
+    <string name="custom_url_scheme">com.lastmile.zombierunner</string>
+</resources>

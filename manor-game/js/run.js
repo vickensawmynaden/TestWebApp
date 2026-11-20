@@ -516,7 +516,7 @@ function fire() {
   const w = WEAPONS[player.weapon];
   if (!w || player.ammo <= 0) { sfx.empty(); player.cd = 0.3; return; }
   player.ammo--; player.cd = w.cd;
-  fx.recoil = 1; fx.flashT = 0.06; fx.shake = Math.max(fx.shake, w.shake);
+  fx.recoil = 1; fx.flashT = 0.06; fx.shake = Math.max(fx.shake, w.shake); buzz(player.weapon === 'shotgun' ? 35 : 15);
   sfx.shot(); if (player.weapon === 'shotgun') { sfx.shot(); sfx.impact(true); }
   const targets = aimTargets(w).slice(0, w.pellets);
   if (!targets.length) {
@@ -566,7 +566,7 @@ function caught(z) {
   state = 'caught';
   player.caughtBy = z; player.caughtT = 0; player.bites = 0;
   z.mode = 'grab'; z.kb = null;
-  sfx.roar(z.pos.x, 1.6, z.pos.z, z.type);
+  sfx.roar(z.pos.x, 1.6, z.pos.z, z.type); buzz([80, 40, 160]);
   fx.shake = 0.8; fx.tilt = 0.25;
   gore.slash(); gore.splat(3, 1.4);
   input.firing = false;
@@ -584,7 +584,7 @@ function updateCaught(dt) {
   player.yaw += dy * Math.min(1, dt * 10);
   if (t > 0.35 + player.bites * 0.45 && player.bites < 4) {
     player.bites++;
-    sfx.bite(); fx.shake = 0.6; fx.tilt = (Math.random() - .5) * 0.5; fx.hurt = 1;
+    sfx.bite(); buzz(120); fx.shake = 0.6; fx.tilt = (Math.random() - .5) * 0.5; fx.hurt = 1;
     gore.splat(2, 1.2); if (player.bites % 2) gore.slash();
     z.head.getWorldPosition(tmp); blood.emit(tmp, tmp2.set(dx / d, 0.5, dz / d), 25, BLOOD, 3, 1.4);
   }
@@ -620,21 +620,49 @@ canvas.addEventListener('mousedown', e => {
 addEventListener('mouseup', e => { if (e.button === 0) input.firing = false; });
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && state === 'play' && !isTouch) pause(); });
 
+// touch: hold the left or right side of the screen to steer; or tilt the phone
+const steerTouches = new Map();
+function touchSteerValue() {
+  let v = 0;
+  for (const x of steerTouches.values()) v += x < innerWidth / 2 ? -1 : 1;
+  return Math.max(-1, Math.min(1, v));
+}
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
   if (state !== 'play') return;
-  const t = e.changedTouches[0];
-  if (!input.steerTouch) input.steerTouch = { id: t.identifier, x: t.clientX };
+  for (const t of e.changedTouches) steerTouches.set(t.identifier, t.clientX);
+  input.touchSteer = touchSteerValue();
 }, { passive: false });
 addEventListener('touchmove', e => {
-  for (const t of e.changedTouches) if (input.steerTouch && t.identifier === input.steerTouch.id) {
-    input.touchSteer = Math.max(-1, Math.min(1, (t.clientX - input.steerTouch.x) / 70));
-  }
+  for (const t of e.changedTouches) if (steerTouches.has(t.identifier)) steerTouches.set(t.identifier, t.clientX);
+  input.touchSteer = touchSteerValue();
 }, { passive: false });
 const endTouch = e => {
-  for (const t of e.changedTouches) if (input.steerTouch && t.identifier === input.steerTouch.id) { input.steerTouch = null; input.touchSteer = 0; }
+  for (const t of e.changedTouches) steerTouches.delete(t.identifier);
+  input.touchSteer = touchSteerValue();
   if (![...e.touches].some(t => document.elementFromPoint(t.clientX, t.clientY) === $('btn-fire'))) { input.firing = false; $('btn-fire').classList.remove('active'); }
 };
+let steerMode = store.get('lastmile-steer') || 'touch';
+let tiltSteer = 0;
+function onTilt(e) {
+  const angle = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+  let v;
+  if (angle === 90) v = e.beta; else if (angle === -90 || angle === 270) v = -e.beta; else v = e.gamma;
+  tiltSteer = Math.max(-1, Math.min(1, (v || 0) / 18));
+}
+async function setSteerMode(mode) {
+  if (mode === 'tilt' && typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
+    try { if (await DeviceOrientationEvent.requestPermission() !== 'granted') mode = 'touch'; } catch { mode = 'touch'; }
+  }
+  steerMode = mode; store.set('lastmile-steer', mode);
+  removeEventListener('deviceorientation', onTilt);
+  if (mode === 'tilt') addEventListener('deviceorientation', onTilt);
+  $('steer-mode').textContent = mode === 'tilt' ? 'STEERING: TILT' : 'STEERING: HOLD LEFT / RIGHT';
+  $('steer-hint').textContent = mode === 'tilt' ? 'TILT TO STEER' : 'HOLD LEFT / RIGHT TO STEER';
+}
+$('steer-mode').addEventListener('click', () => setSteerMode(steerMode === 'tilt' ? 'touch' : 'tilt'));
+setSteerMode(steerMode === 'tilt' && !(typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) ? 'tilt' : 'touch');
+const buzz = ms => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
 addEventListener('touchend', endTouch); addEventListener('touchcancel', endTouch);
 $('btn-fire').addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); input.firing = true; fire(); $('btn-fire').classList.add('active'); }, { passive: false });
 $('btn-pause').addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); pause(); }, { passive: false });
@@ -647,6 +675,7 @@ function enterPlay() {
   else canvas.requestPointerLock?.();
   state = 'play'; last = performance.now();
 }
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 function pause() { if (state !== 'play') return; state = 'paused'; input.firing = false; $('pause').classList.remove('hidden'); $('touch').classList.add('hidden'); }
 $('play').addEventListener('click', () => { reset(); enterPlay(); showMessage('RUN', 1.4); sfx.sting(); });
 $('resume').addEventListener('click', enterPlay);
@@ -674,7 +703,7 @@ function updateHUD(dt) {
 // ---------------------------------------------------------------- per frame
 function updatePlayer(dt) {
   player.time += dt;
-  let steer = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + (input.touchSteer || 0);
+  let steer = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0) + (input.touchSteer || 0) + (steerMode === 'tilt' ? tiltSteer : 0);
   steer = Math.max(-1, Math.min(1, steer));
   player.steer += (steer - player.steer) * Math.min(1, dt * 8);
   player.yaw -= player.steer * 1.7 * dt + input.mouseSteer;
@@ -690,7 +719,7 @@ function updatePlayer(dt) {
   player.pos.x += fx_ * spd * dt; player.pos.z += fz * spd * dt;
   if (collide(player.pos, 0.4) && fx.stumbleCd <= 0) {
     fx.stumble = 0.7; fx.stumbleCd = 1; fx.shake = 0.5; fx.tilt = (Math.random() < .5 ? -1 : 1) * 0.15;
-    sfx.impact(false); sfx.hurt();
+    sfx.impact(false); sfx.hurt(); buzz(60);
     feed('STUMBLED');
   }
   player.dist += Math.hypot(player.pos.x - ox, player.pos.z - oz);
@@ -710,7 +739,7 @@ function updatePlayer(dt) {
       c.taken = true; c.mesh.visible = false; c.beam.visible = false;
       const W = WEAPONS[c.type];
       if (player.weapon === c.type) player.ammo += W.add; else { player.weapon = c.type; player.ammo = W.add + (c.type === 'pistol' ? player.ammo : 0); }
-      feed(`${W.name} +${W.add}`); sfx.pickup();
+      feed(`${W.name} +${W.add}`); sfx.pickup(); buzz(25);
     }
   }
   // the horde grows the further you get
@@ -798,6 +827,11 @@ loadModels(window.MODEL_BASE || 'models/')
   .catch(err => console.warn('Models failed to load; using fallback zombies.', err))
   .finally(() => { playBtn.disabled = false; playBtn.textContent = 'RUN'; window.__ready = true; });
 requestAnimationFrame(frame);
+
+// installable web app: offline cache (skipped inside the native app shell and in previews)
+if ('serviceWorker' in navigator && !window.Capacitor && /run\.html$|\/$/.test(location.pathname) && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+  navigator.serviceWorker.register('run-sw.js').catch(() => {});
+}
 
 window.__run = { get state() { return state; }, player, get zombies() { return zombies; }, fire, spawnZombie, spawnHorde, camera,
   step(dt, n) { for (let i = 0; i < n; i++) { if (state === 'play') { updatePlayer(dt); updateZombies(dt); } else if (state === 'caught') { updateCaught(dt); updateZombies(dt); } } } };

@@ -1,0 +1,8 @@
+{
+  "appId": "com.lastmile.zombierunner",
+  "appName": "Last Mile",
+  "webDir": "www",
+  "backgroundColor": "#0b0d12",
+  "android": { "backgroundColor": "#0b0d12" },
+  "ios": { "backgroundColor": "#0b0d12", "contentInset": "never" }
+}

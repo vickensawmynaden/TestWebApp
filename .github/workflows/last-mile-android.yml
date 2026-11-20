@@ -1,0 +1,63 @@
+name: Last Mile Android APK
+
+on:
+  push:
+    paths:
+      - "manor-game/**"
+      - "last-mile-app/**"
+      - ".github/workflows/last-mile-android.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: last-mile-app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: last-mile-app/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Install Capacitor
+        run: npm ci
+
+      - name: Copy the game into the app and sync Android
+        run: npm run sync
+
+      - name: Build debug APK
+        working-directory: last-mile-app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+          cp app/build/outputs/apk/debug/app-debug.apk ../last-mile.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: last-mile-apk
+          path: last-mile-app/last-mile.apk
+
+      - name: Publish to the "last-mile-latest" pre-release (easy phone download)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: last-mile-latest
+          name: Last Mile (latest Android build)
+          prerelease: true
+          files: last-mile-app/last-mile.apk
+          body: |
+            Latest Android build of Last Mile from ${{ github.sha }}.
+            On your Android phone: download last-mile.apk, open it, and allow "Install unknown apps" when asked.

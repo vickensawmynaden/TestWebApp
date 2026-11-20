@@ -13,3 +13,9 @@
 .run-fire { width: 100px; height: 100px; }
 body.touch .run-weapon { bottom: max(28px, calc(env(safe-area-inset-bottom) + 20px)); }
 #message { top: 24%; }
+
+.steer-mode { pointer-events: auto; margin-top: 18px; font: inherit; font-weight: 800; font-size: 12px; letter-spacing: 2px; padding: 10px 16px; color: #e9dfca; background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.25); border-radius: 3px; }
+@media (orientation: landscape) and (max-height: 500px) {
+  h1 { font-size: 46px; } .tag { margin: 8px 0 14px; } .hint { margin-top: 10px; } .controls { margin-top: 12px; }
+  .run-fire { width: 84px; height: 84px; }
+}
