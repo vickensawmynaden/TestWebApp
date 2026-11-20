@@ -673,26 +673,53 @@ const endTouch = e => {
   input.touchSteer = touchSteerValue();
   if (![...e.touches].some(t => document.elementFromPoint(t.clientX, t.clientY) === $('btn-fire'))) { input.firing = false; $('btn-fire').classList.remove('active'); }
 };
-let steerMode = store.get('lastmile-steer') || 'touch';
-let tiltSteer = 0;
+// Tilt steering: turn the phone like a steering wheel. Gravity is projected onto the screen
+// (using the screen's rotation) so it works in landscape either way round and in portrait.
+const hasTilt = typeof DeviceOrientationEvent !== 'undefined';
+const needsTiltPermission = hasTilt && typeof DeviceOrientationEvent.requestPermission === 'function';
+let steerMode = store.get('lastmile-steer') || (isTouch && hasTilt ? 'tilt' : 'touch');
+let tiltSteer = 0, tiltSeen = 0, tiltGranted = !needsTiltPermission;
+const TILT_DEAD = 0.05, TILT_FULL = 0.38; // radians: ~3 deg dead zone, full lock at ~22 deg
 function onTilt(e) {
-  const angle = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
-  let v;
-  if (angle === 90) v = e.beta; else if (angle === -90 || angle === 270) v = -e.beta; else v = e.gamma;
-  tiltSteer = Math.max(-1, Math.min(1, (v || 0) / 18));
+  if (e.beta == null || e.gamma == null) return;
+  tiltSeen = performance.now();
+  const b = e.beta * Math.PI / 180, g = e.gamma * Math.PI / 180;
+  const gx = Math.sin(g) * Math.cos(b), gy = -Math.sin(b);          // gravity in the device's screen plane
+  const ang = (((screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0) * Math.PI) / 180;
+  const sx = gx * Math.cos(ang) - gy * Math.sin(ang), sy = gx * Math.sin(ang) + gy * Math.cos(ang);
+  if (Math.hypot(sx, sy) < 0.25) return;                            // phone lying flat: no reliable wheel angle
+  const wheel = Math.atan2(sx, -sy);                                // 0 = level, + = turned right
+  const mag = Math.max(0, Math.abs(wheel) - TILT_DEAD) / (TILT_FULL - TILT_DEAD);
+  const target = Math.sign(wheel) * Math.min(1, mag);
+  tiltSteer += (target - tiltSteer) * 0.5;                          // light smoothing against sensor jitter
 }
-async function setSteerMode(mode) {
-  if (mode === 'tilt' && typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) {
-    try { if (await DeviceOrientationEvent.requestPermission() !== 'granted') mode = 'touch'; } catch { mode = 'touch'; }
-  }
-  steerMode = mode; store.set('lastmile-steer', mode);
+function askTilt() {
+  // iOS only grants motion access from a tap, so this runs inside the RUN / toggle click handlers
+  if (!needsTiltPermission || tiltGranted) return Promise.resolve(tiltGranted);
+  return DeviceOrientationEvent.requestPermission().then(r => (tiltGranted = r === 'granted')).catch(() => false);
+}
+function setSteerMode(mode, save = true) {
+  if (mode === 'tilt' && !hasTilt) mode = 'touch';
+  steerMode = mode; if (save) store.set('lastmile-steer', mode);
   removeEventListener('deviceorientation', onTilt);
   if (mode === 'tilt') addEventListener('deviceorientation', onTilt);
-  $('steer-mode').textContent = mode === 'tilt' ? 'STEERING: TILT' : 'STEERING: HOLD LEFT / RIGHT';
-  $('steer-hint').textContent = mode === 'tilt' ? 'TILT TO STEER' : 'HOLD LEFT / RIGHT TO STEER';
+  tiltSteer = 0;
+  $('steer-mode').textContent = mode === 'tilt' ? 'STEERING: TILT PHONE' : 'STEERING: HOLD LEFT / RIGHT';
+  $('steer-hint').textContent = mode === 'tilt' ? 'TILT YOUR PHONE TO STEER' : 'HOLD LEFT / RIGHT TO STEER';
 }
-$('steer-mode').addEventListener('click', () => setSteerMode(steerMode === 'tilt' ? 'touch' : 'tilt'));
-setSteerMode(steerMode === 'tilt' && !(typeof DeviceOrientationEvent !== 'undefined' && DeviceOrientationEvent.requestPermission) ? 'tilt' : 'touch');
+$('steer-mode').addEventListener('click', () => {
+  const next = steerMode === 'tilt' ? 'touch' : 'tilt';
+  if (next === 'tilt') { setSteerMode('tilt'); askTilt(); } else setSteerMode('touch');
+});
+setSteerMode(steerMode, false);
+// if tilt was chosen but no sensor readings arrive (blocked by the browser or the page host), fall back
+function checkTiltWorks() {
+  if (steerMode !== 'tilt') return;
+  const started = performance.now();
+  setTimeout(() => {
+    if (steerMode === 'tilt' && tiltSeen < started) { setSteerMode('touch', false); feed('TILT UNAVAILABLE HERE: HOLD LEFT / RIGHT'); }
+  }, 1500);
+}
 const buzz = ms => { try { navigator.vibrate?.(ms); } catch { /* not supported */ } };
 addEventListener('touchend', endTouch); addEventListener('touchcancel', endTouch);
 $('btn-fire').addEventListener('touchstart', e => { e.preventDefault(); e.stopPropagation(); input.firing = true; fire(); $('btn-fire').classList.add('active'); }, { passive: false });
@@ -708,9 +735,9 @@ function enterPlay() {
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
 function pause() { if (state !== 'play') return; state = 'paused'; sfx.breath()?.stop(); input.firing = false; $('pause').classList.remove('hidden'); $('touch').classList.add('hidden'); }
-$('play').addEventListener('click', () => { reset(); enterPlay(); showMessage('RUN', 1.4); sfx.sting(); });
+$('play').addEventListener('click', () => { if (steerMode === 'tilt') askTilt().then(checkTiltWorks); reset(); enterPlay(); showMessage('RUN', 1.4); sfx.sting(); });
 $('resume').addEventListener('click', enterPlay);
-$('retry').addEventListener('click', () => { reset(); enterPlay(); showMessage('RUN', 1.4); });
+$('retry').addEventListener('click', () => { reset(); enterPlay(); showMessage('RUN', 1.4); checkTiltWorks(); });
 
 // ---------------------------------------------------------------- HUD
 const hudCache = {};
@@ -873,5 +900,5 @@ if ('serviceWorker' in navigator && !window.Capacitor && !window.MODEL_EXT && /r
   navigator.serviceWorker.register('run-sw.js').catch(() => {});
 }
 
-window.__run = { get state() { return state; }, player, setSteer: v => { input.touchSteer = v; }, get zombies() { return zombies; }, fire, spawnZombie, spawnHorde, camera,
+window.__run = { get tilt() { return { steerMode, tiltSteer, tiltSeen }; }, get state() { return state; }, player, setSteer: v => { input.touchSteer = v; }, get zombies() { return zombies; }, fire, spawnZombie, spawnHorde, camera,
   step(dt, n) { for (let i = 0; i < n; i++) { if (state === 'play') { updatePlayer(dt); updateZombies(dt); } else if (state === 'caught') { updateCaught(dt); updateZombies(dt); } } } };
