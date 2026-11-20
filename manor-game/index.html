@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0b0c0f">
+  <title>Hollow Manor</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.min.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="vignette"></div>
+    <div id="hurt"></div>
+    <div id="crosshair"><i class="t"></i><i class="b"></i><i class="l"></i><i class="r"></i><b></b></div>
+    <div id="hitmarker"></div>
+    <div class="top">
+      <div class="chip"><span class="lbl">WAVE</span><span id="wave">1</span></div>
+      <div class="chip"><span class="lbl">KILLS</span><span id="kills">0</span></div>
+      <div class="chip"><span class="lbl">SCORE</span><span id="score">0</span></div>
+    </div>
+    <div id="left-alive" class="sub"></div>
+    <div id="message"></div>
+    <div class="bottom-left">
+      <div class="hp-row"><span class="cross">+</span><div class="bar"><div id="hpfill"></div></div><span id="hptext">100</span></div>
+      <div class="stam"><div id="stamfill"></div></div>
+    </div>
+    <div class="bottom-right">
+      <div id="ammo"><span id="mag">12</span><span class="sep">/</span><span id="reserve">36</span></div>
+      <div id="reload-hint" class="hidden">RELOAD</div>
+    </div>
+    <div id="pickup-feed"></div>
+  </div>
+
+  <div id="touch" class="hidden">
+    <div id="stick"><div id="knob"></div></div>
+    <button id="btn-fire" class="tbtn fire" aria-label="Fire"></button>
+    <button id="btn-reload" class="tbtn small" aria-label="Reload">R</button>
+    <button id="btn-sprint" class="tbtn small" aria-label="Sprint">RUN</button>
+    <button id="btn-light" class="tbtn small" aria-label="Flashlight">&#9788;</button>
+    <button id="btn-pause" class="tbtn tiny" aria-label="Pause">II</button>
+  </div>
+
+  <div id="menu" class="overlay">
+    <div class="panel">
+      <h1>HOLLOW<br>MANOR</h1>
+      <p class="tag">The fog came in at dusk. The dead came with it.</p>
+      <button id="play" class="big">ENTER THE ESTATE</button>
+      <div class="controls desktop-only">
+        <div><kbd>W A S D</kbd> move</div><div><kbd>Mouse</kbd> aim</div>
+        <div><kbd>Click</kbd> fire</div><div><kbd>R</kbd> reload</div>
+        <div><kbd>Shift</kbd> sprint</div><div><kbd>F</kbd> flashlight</div>
+      </div>
+      <div class="controls touch-only">
+        <div>Left thumb: move</div><div>Drag right side: aim</div>
+        <div>Big button: fire</div><div>Headshots kill faster</div>
+      </div>
+      <p class="hint">Survive the waves. Aim for the head. Scavenge ammo from the fallen and the manor's rooms.</p>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay hidden">
+    <div class="panel">
+      <h2>PAUSED</h2>
+      <button id="resume" class="big">RESUME</button>
+    </div>
+  </div>
+
+  <div id="dead" class="overlay hidden">
+    <div class="panel">
+      <h2 class="red">YOU DIED</h2>
+      <div id="stats"></div>
+      <button id="retry" class="big">TRY AGAIN</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "hollow-manor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "First-person zombie survival in a fogbound estate (Three.js, desktop + touch).",
+  "type": "module",
+  "scripts": { "start": "node tools/serve.js" },
+  "license": "MIT"
+}
