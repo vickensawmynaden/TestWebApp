@@ -185,6 +185,29 @@ export class Sfx {
     this.noiseHit(t, 'bandpass', kind === 'runner' ? 1400 : 600, 1.2, 0.6, dur, out);
   }
 
+
+  // the runner's ragged breathing; rate follows the pace, level follows the panic
+  breath() {
+    if (!this.ctx || this._breath) return this._breath;
+    const c = this.ctx, s = this.src('loop');
+    const f = c.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1100; f.Q.value = 0.9;
+    const g = c.createGain(); g.gain.value = 0;
+    s.connect(f); f.connect(g); g.connect(this.master); s.start();
+    let t = 0;
+    const b = this._breath = {
+      level: 0.12, rate: 1.6,
+      tick: dt => {
+        t += dt * b.rate;
+        const ph = t % 1, inhale = ph < 0.45;
+        const env = inhale ? Math.sin(ph / 0.45 * Math.PI) * 0.7 : Math.sin((ph - 0.45) / 0.55 * Math.PI);
+        g.gain.setTargetAtTime(Math.max(0, env) * b.level, c.currentTime, 0.03);
+        f.frequency.setTargetAtTime(inhale ? 1500 : 850, c.currentTime, 0.05);
+      },
+      stop: () => { g.gain.setTargetAtTime(0, c.currentTime, 0.1); },
+    };
+    return b;
+  }
+
   // positional groan; listener is updated each frame by setListener
   groan(x, y, z, kind) {
     if (!this.ctx) return;

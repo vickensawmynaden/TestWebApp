@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { rng, ground, bark, dirt, radial, make } from './textures.js';
 import { loadModels } from './models.js';
+import { loadHumans } from './humans.js';
 import { Zombie } from './zombie.js';
 import { Sfx } from './audio.js';
 
@@ -26,7 +27,7 @@ renderer.autoClear = false;
 const FOG = 0x1c2230;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(FOG);
-scene.fog = new THREE.FogExp2(FOG, 0.034);
+scene.fog = new THREE.FogExp2(FOG, 0.046);
 const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 160);
 camera.rotation.order = 'YXZ';
 scene.add(camera);
@@ -431,18 +432,18 @@ function reset() {
   gore.clear();
   Object.assign(player, { yaw: 0, steer: 0, dist: 0, kills: 0, heads: 0, speed: 5.5, weapon: 'pistol', ammo: 8, cd: 0, caughtBy: null, caughtT: 0, time: 0 });
   player.pos.set(0, 0, 0);
-  Object.assign(fx, { recoil: 0, shake: 0, tilt: 0, hurt: 0, flashT: 0, slowT: 0, stumble: 0 });
-  spawnT = 1.5;
+  Object.assign(fx, { recoil: 0, shake: 0, tilt: 0, hurt: 0, flashT: 0, slowT: 0, stumble: 0, ambushT: 12, beatT: 0 });
+  spawnT = 1.0;
   updateCells();
 }
 
 // ---------------------------------------------------------------- zombies
-function spawnZombie(ahead = 50 + Math.random() * 30, lateral = (Math.random() - .5) * 60) {
+function spawnZombie(ahead = 32 + Math.random() * 26, lateral = (Math.random() - .5) * 60) {
   const fx_ = -Math.sin(player.yaw), fz = -Math.cos(player.yaw), rx = Math.cos(player.yaw), rz = -Math.sin(player.yaw);
   const x = player.pos.x + fx_ * ahead + rx * lateral, z = player.pos.z + fz * ahead + rz * lateral;
   if (blockedAt(x, z, 0.8)) return null;
   const d = player.dist, roll = Math.random();
-  const type = d > 250 && roll < Math.min(0.1, 0.02 + d / 20000) ? 'brute' : d > 350 && roll > 1 - Math.min(0.3, (d - 350) / 3000 + 0.05) ? 'runner' : 'walker';
+  const type = d > 300 && roll < Math.min(0.08, 0.02 + d / 25000) ? 'brute' : d > 120 && roll > 1 - Math.min(0.3, (d - 120) / 2500 + 0.06) ? 'runner' : 'walker';
   const zb = new Zombie(type, x, z);
   zb.yaw = Math.random() * 6.28;
   zb.wander = Math.random() * 6.28;
@@ -453,11 +454,23 @@ function spawnZombie(ahead = 50 + Math.random() * 30, lateral = (Math.random() -
   return zb;
 }
 function spawnHorde() {
-  const n = 4 + Math.floor(Math.random() * 4), base = 55 + Math.random() * 15, off = (Math.random() - .5) * 10;
-  for (let i = 0; i < n; i++) spawnZombie(base + (Math.random() - .5) * 6, off + (i - n / 2) * (2.2 + Math.random()));
+  // a wall of the dead across your path, with a gap or two to aim for
+  const n = 6 + Math.floor(Math.random() * 6 + Math.min(6, player.dist / 300)), base = 38 + Math.random() * 12, off = (Math.random() - .5) * 8;
+  const gap = Math.floor(Math.random() * n);
+  for (let i = 0; i < n; i++) { if (i === gap) continue; spawnZombie(base + (Math.random() - .5) * 7, off + (i - n / 2) * (1.6 + Math.random() * 0.9)); }
+}
+// one of them claws its way up out of the dirt right in front of you
+function spawnAmbush() {
+  const z = spawnZombie(11 + Math.random() * 7, (Math.random() - .5) * 5);
+  if (!z) return;
+  z.rise = 1; z.alerted = true; z.pos.y = -1.7;
+  sfx.roar(z.pos.x, 0.5, z.pos.z, 'walker');
+  tmp.set(z.pos.x, 0.1, z.pos.z); dust.emit(tmp, tmp2.set(0, 1, 0), 30, DUST, 2.5, 2, 1);
 }
 
+let nearest = 99;
 function updateZombies(dt) {
+  nearest = 99;
   const px = player.pos.x, pz = player.pos.z;
   const fx_ = -Math.sin(player.yaw), fz = -Math.cos(player.yaw);
   for (let i = zombies.length - 1; i >= 0; i--) {
@@ -471,7 +484,21 @@ function updateZombies(dt) {
     const behind = -(dx * fx_ + dz * fz); // >0 when zombie is ahead
     if (behind < -25 || d > 120) { scene.remove(z.root); zombies.splice(i, 1); continue; }
     if (z.mode === 'grab') { z.animate(dt, false, 0); continue; }
-    z.flinch = Math.max(0, z.flinch - dt * 4); z.stun -= dt;
+    if (z.rise) {
+      z.pos.y = Math.min(0, z.pos.y + dt * 2.2);
+      z.yaw = Math.atan2(dx, dz);
+      z.lunge = true; z.animate(dt, false, 0);
+      if (z.pos.y >= 0) z.rise = 0;
+      if (state === 'play' && d < z.radius + 0.55) caught(z);
+      continue;
+    }
+    nearest = Math.min(nearest, d);
+    if (state === 'play' && !z.closeCall && d < 1.7 && d > z.radius + 0.55 && behind < 0.6) {
+      z.closeCall = true; fx.slowT = 0.18; fx.hurt = Math.max(fx.hurt, 0.45); fx.shake = 0.3;
+      sfx.roar(z.pos.x, 1.6, z.pos.z, z.type); sfx.heartbeat(); buzz(40);
+      showMessage('<small>CLOSE CALL</small>', 0.6);
+    }
+    z.flinch = Math.max(0, z.flinch - dt * 4); z.stun -= dt; z.attackCd -= dt; if (z.attackT > 0) z.attackT -= dt;
     let speed, dirx, dirz;
     const sense = z.type === 'runner' ? 30 : 17;
     if (d < sense) {
@@ -479,9 +506,12 @@ function updateZombies(dt) {
       const lead = Math.min(1.2, d / 6);
       const tx = px + fx_ * player.speed * lead - z.pos.x, tz = pz + fz * player.speed * lead - z.pos.z, tl = Math.hypot(tx, tz) || 1;
       dirx = tx / tl; dirz = tz / tl;
-      speed = z.def.speed * z.speedMul * (d < 6 ? 1.35 : 1);
+      speed = z.def.speed * z.speedMul * (d < 5 ? 1.5 : 1);
+      z.lunge = d < 6;
+      if (d < 2.4 && z.attackT <= 0 && z.attackCd <= 0) { z.attackT = 0.55; z.attackCd = 1; if (Math.random() < .5) sfx.slash(); }
       if (!z.alerted) { z.alerted = true; if (Math.random() < 0.6) sfx.groan(z.pos.x, 1.6, z.pos.z, z.type); }
     } else {
+      z.lunge = false;
       z.wander += (Math.random() - .5) * dt;
       dirx = Math.sin(z.wander); dirz = Math.cos(z.wander); speed = 0.35;
     }
@@ -493,7 +523,7 @@ function updateZombies(dt) {
     z.yaw += da * Math.min(1, dt * 6);
     z.animate(dt, true, speed);
     z.groanT -= dt;
-    if (z.groanT <= 0) { if (d < 25) sfx.groan(z.pos.x, 1.6, z.pos.z, z.type); z.groanT = 3 + Math.random() * 6; }
+    if (z.groanT <= 0) { if (d < 30) sfx.groan(z.pos.x, 1.6, z.pos.z, z.type); z.groanT = (d < 12 ? 1.2 : 2.5) + Math.random() * 4; }
     if (state === 'play' && d < z.radius + 0.55) caught(z);
   }
 }
@@ -565,7 +595,7 @@ function kill(z, head, d) {
 function caught(z) {
   state = 'caught';
   player.caughtBy = z; player.caughtT = 0; player.bites = 0;
-  z.mode = 'grab'; z.kb = null;
+  z.mode = 'grab'; z.kb = null; z.rise = 0; z.pos.y = 0;
   sfx.roar(z.pos.x, 1.6, z.pos.z, z.type); buzz([80, 40, 160]);
   fx.shake = 0.8; fx.tilt = 0.25;
   gore.slash(); gore.splat(3, 1.4);
@@ -592,6 +622,7 @@ function updateCaught(dt) {
 }
 function gameOver() {
   state = 'dead';
+  sfx.breath()?.stop();
   if (document.pointerLockElement) document.exitPointerLock();
   const dist = Math.floor(player.dist);
   const isBest = dist > best;
@@ -676,7 +707,7 @@ function enterPlay() {
   state = 'play'; last = performance.now();
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause(); });
-function pause() { if (state !== 'play') return; state = 'paused'; input.firing = false; $('pause').classList.remove('hidden'); $('touch').classList.add('hidden'); }
+function pause() { if (state !== 'play') return; state = 'paused'; sfx.breath()?.stop(); input.firing = false; $('pause').classList.remove('hidden'); $('touch').classList.add('hidden'); }
 $('play').addEventListener('click', () => { reset(); enterPlay(); showMessage('RUN', 1.4); sfx.sting(); });
 $('resume').addEventListener('click', enterPlay);
 $('retry').addEventListener('click', () => { reset(); enterPlay(); showMessage('RUN', 1.4); });
@@ -744,12 +775,19 @@ function updatePlayer(dt) {
   }
   // the horde grows the further you get
   spawnT -= dt;
-  const want = Math.min(34, 6 + Math.floor(player.dist / 35));
+  const want = Math.min(46, 7 + Math.floor(player.dist / 20));
   const alive = zombies.filter(z => z.alive).length;
   if (spawnT <= 0 && alive < want) {
-    if (Math.random() < 0.12 + Math.min(0.2, player.dist / 5000)) spawnHorde(); else spawnZombie();
-    spawnT = Math.max(0.15, 0.9 - player.dist / 2500);
+    if (Math.random() < 0.1 + Math.min(0.2, player.dist / 4000)) spawnHorde(); else spawnZombie();
+    spawnT = Math.max(0.12, 0.6 - player.dist / 2500);
   }
+  fx.ambushT = (fx.ambushT ?? 12) - dt;
+  if (fx.ambushT <= 0 && player.dist > 60) { spawnAmbush(); fx.ambushT = 7 + Math.random() * 9; }
+  // breathing and heartbeat rise with speed and with how close the dead are
+  const br = sfx.breath();
+  if (br) { br.rate = 1.2 + player.speed * 0.12 + (nearest < 8 ? 0.6 : 0); br.level = 0.1 + (nearest < 10 ? 0.12 : 0) + Math.min(0.08, player.dist / 6000); br.tick(dt); }
+  fx.beatT = (fx.beatT ?? 0) - dt;
+  if (nearest < 7 && fx.beatT <= 0) { sfx.heartbeat(); fx.beatT = 0.35 + nearest * 0.06; }
   if (Math.floor(player.dist / 500) > Math.floor((player.dist - spd * dt) / 500)) showMessage(`${Math.floor(player.dist / 500) * 500} m`, 1.5);
   updateCells();
 }
@@ -759,7 +797,7 @@ function placeCamera(dt) {
   const running = state === 'play' || state === 'menu';
   const caughtK = state === 'caught' || state === 'dead' ? Math.min(1, Math.max(0, (player.caughtT - 1.3) / 0.8)) : 0;
   const sh = fx.shake * 0.12;
-  const bobY = running ? Math.abs(Math.sin(fx.bob)) * 0.07 : 0;
+  const bobY = running ? Math.abs(Math.sin(fx.bob)) * (0.07 + player.speed * 0.004) : 0;
   camera.position.set(player.pos.x, 1.62 + bobY - caughtK * 1.1, player.pos.z);
   camera.rotation.set(-0.03 - fx.recoil * 0.03 + (Math.random() - .5) * sh - caughtK * 0.3,
     player.yaw + (Math.random() - .5) * sh,
@@ -823,15 +861,17 @@ reset();
 $('menu-best').textContent = best ? `Best run: ${best} m` : '';
 const playBtn = $('play');
 playBtn.disabled = true; playBtn.textContent = 'LOADING…';
-loadModels(window.MODEL_BASE || 'models/')
-  .catch(err => console.warn('Models failed to load; using fallback zombies.', err))
+Promise.all([
+  loadModels(window.MODEL_BASE || 'models/').catch(err => console.warn('Monster models failed to load.', err)),
+  loadHumans(window.MODEL_BASE || 'models/').catch(err => console.warn('Zombie models failed to load; using fallback zombies.', err)),
+])
   .finally(() => { playBtn.disabled = false; playBtn.textContent = 'RUN'; window.__ready = true; });
 requestAnimationFrame(frame);
 
 // installable web app: offline cache (skipped inside the native app shell and in previews)
-if ('serviceWorker' in navigator && !window.Capacitor && /run\.html$|\/$/.test(location.pathname) && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+if ('serviceWorker' in navigator && !window.Capacitor && !window.MODEL_EXT && /run\.html$/.test(location.pathname) && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('run-sw.js').catch(() => {});
 }
 
-window.__run = { get state() { return state; }, player, get zombies() { return zombies; }, fire, spawnZombie, spawnHorde, camera,
+window.__run = { get state() { return state; }, player, setSteer: v => { input.touchSteer = v; }, get zombies() { return zombies; }, fire, spawnZombie, spawnHorde, camera,
   step(dt, n) { for (let i = 0; i < n; i++) { if (state === 'play') { updatePlayer(dt); updateZombies(dt); } else if (state === 'caught') { updateCaught(dt); updateZombies(dt); } } } };

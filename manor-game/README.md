@@ -50,3 +50,12 @@ in the browser.
 
 Controls: A/D or mouse to steer, click/Space to fire. Touch: drag left/right to steer, red button to fire.
 Open `http://localhost:8080/run.html` after `npm start`.
+
+### Zombie models
+
+Human zombies use the rigged `Soldier.glb` and `Michelle.glb` characters from the three.js
+examples (`models/zombie_soldier.glb`, `models/zombie_woman.glb`), turned into the dead by
+`js/humans.js`: a rot shader (grey skin, bruising, blood streaks), a hunched gait with reaching
+arms layered on top of the walk/run clips (the second body is posed procedurally), and a
+head-pop cut driven by the head bones' skin weights. Ogres and werewolves (the uploaded GLBs)
+remain as rarer special enemies.

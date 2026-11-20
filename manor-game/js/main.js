@@ -4,6 +4,7 @@ import { Zombie } from './zombie.js';
 import { Sfx } from './audio.js';
 import { radial } from './textures.js';
 import { loadModels } from './models.js';
+import { loadHumans } from './humans.js';
 import { Avatar } from './avatar.js';
 
 const $ = id => document.getElementById(id);
@@ -1022,8 +1023,10 @@ function frame(now) {
 resetGame();
 const playBtn = $('play');
 playBtn.disabled = true; playBtn.textContent = 'LOADING…';
-loadModels(window.MODEL_BASE || 'models/')
-  .catch(err => console.warn('Character models failed to load; using fallback zombies.', err))
+Promise.all([
+  loadModels(window.MODEL_BASE || 'models/').catch(err => console.warn('Monster models failed to load.', err)),
+  loadHumans(window.MODEL_BASE || 'models/').catch(err => console.warn('Zombie models failed to load; using fallback zombies.', err)),
+])
   .finally(() => { avatar.init(); playBtn.disabled = false; playBtn.textContent = 'ENTER THE ESTATE'; window.__modelsReady = true; });
 $('hud').classList.add('hidden');
 $('message').classList.remove('show');

@@ -1,6 +1,7 @@
 // Procedural low-poly zombies with a shambling walk, lunging runners and heavy brutes.
 import * as THREE from 'three';
 import { hasModel, makeModelMesh, RIGS } from './models.js';
+import { hasHumans, makeHuman, aimBone, turnBone, attachBox, addStump } from './humans.js';
 
 const SKINS = [0x6c725e, 0x626854, 0x77725f, 0x585e4e, 0x6e675a, 0x7b7564];
 const SHIRTS = [0x3d3a33, 0x4a3b2b, 0x2f3238, 0x51463a, 0x3a2e2a, 0x6a6458];
@@ -22,6 +23,7 @@ const eyeMat = new THREE.MeshBasicMaterial({ color: 0xd8ff6a });
 const eyeMatRed = new THREE.MeshBasicMaterial({ color: 0xff3a2a });
 const goreMat = new THREE.MeshStandardMaterial({ color: 0x4a0706, roughness: 0.4 });
 const hitMat = new THREE.MeshBasicMaterial({ visible: false });
+const _f = new THREE.Vector3(), _r = new THREE.Vector3(), _d = new THREE.Vector3();
 const boneMat = new THREE.MeshStandardMaterial({ color: 0xcfc4a8, roughness: 0.7 });
 
 export class Zombie {
@@ -49,8 +51,10 @@ export class Zombie {
     // regular walkers reuse the werewolf or ogre mesh, a bit smaller, with a shambling gait
     this.modelKey = type === 'walker' ? (Math.random() < 0.55 ? 'runner' : 'brute') : type;
     this.sizeMul = type === 'walker' ? (this.modelKey === 'brute' ? 0.78 : 0.9) : 1;
-    this.useModel = hasModel(this.modelKey);
-    if (this.useModel) this.buildModel(); else this.build();
+    // most of the dead are people: walkers always, runners usually; ogres and werewolves are rarer
+    this.human = hasHumans() && (type === 'walker' || (type === 'runner' && Math.random() < 0.65));
+    this.useModel = !this.human && hasModel(this.modelKey);
+    if (this.human) this.buildHuman(); else if (this.useModel) this.buildModel(); else this.build();
   }
 
   build() {
@@ -110,6 +114,114 @@ export class Zombie {
       this.legs.push({ hp, kn, side });
     }
     root.position.copy(this.pos);
+  }
+
+  buildHuman() {
+    const H = this.h = makeHuman();
+    H.cur = null;
+    H.reach = this.type === 'runner' ? 0.3 : 0.55 + Math.random() * 0.4;
+    H.hunch = 0.2 + Math.random() * 0.3;
+    H.armUp = (Math.random() - 0.3) * 0.25;
+    const root = new THREE.Group();
+    root.rotation.order = 'YXZ';
+    root.add(H.holder);
+    root.updateMatrixWorld(true);
+    const body = attachBox(H.bones.spine2 || H.bones.spine, [0.5, 0.8, 0.34], [0, -0.12, 0]);
+    const head = attachBox(H.bones.head, [0.26, 0.3, 0.28], [0, 0.11, 0.02]);
+    for (const [m, part] of [[body, 'body'], [head, 'head']]) { m.userData.zombie = this; m.userData.part = part; this.parts.push(m); }
+    this.head = head; this.headParts = [head];
+    this.root = root;
+    root.position.copy(this.pos);
+  }
+
+  animateHuman(dt, moving, speed) {
+    const H = this.h, B = H.bones;
+    const grab = this.mode === 'grab';
+    const want = grab || !moving ? 'idle' : speed > 2.3 ? 'run' : 'walk';
+    if (H.procedural) return this.poseHuman(dt, want, speed, grab);
+    if (want !== H.cur) {
+      const next = H.actions[want];
+      next.enabled = true; next.reset().setEffectiveWeight(1).fadeIn(H.cur ? 0.25 : 0).play();
+      if (H.cur) H.actions[H.cur].fadeOut(0.25);
+      H.cur = want;
+    }
+    if (want === 'walk') H.actions.walk.timeScale = Math.max(0.45, Math.min(1.4, speed / 1.5)) * (this.limp ? 0.8 : 1);
+    if (want === 'run') H.actions.run.timeScale = Math.max(0.7, Math.min(1.5, speed / 4));
+    if (want === 'idle') H.actions.idle.timeScale = grab ? 2.5 : 1;
+    H.mixer.update(dt);
+    this.phase += dt * (grab ? 9 : 3);
+    this.root.position.copy(this.pos);
+    this.root.rotation.y = this.yaw;
+    this.root.updateMatrixWorld(true);
+    // bend the clip into a zombie: hunched, head lolling, arms reaching for you
+    const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
+    const fwd = _f.set(sy, 0, cy), side = _r.set(-cy, 0, sy); // side points to the zombie's right
+    const p = this.phase;
+    const attack = this.attackT > 0 ? 1 - this.attackT / 0.55 : -1;
+    turnBone(B.spine, side, H.hunch + (want === 'run' ? 0.15 : 0) - this.flinch * 0.7 + (grab ? 0.25 + Math.sin(p) * 0.08 : 0) + (attack > 0.5 ? 0.3 : 0));
+    turnBone(B.neck, fwd, this.headTilt * 0.6 + Math.sin(p * 0.37) * 0.12);
+    turnBone(B.head, side, -0.25 + (grab ? Math.sin(p * 1.3) * 0.25 : Math.sin(p * 0.8) * 0.06));
+    let reach = H.reach, up = H.armUp + Math.sin(p * 0.9) * 0.06;
+    if (this.lunge) { reach = 1; up = 0.2 + Math.sin(p * 2) * 0.08; }
+    if (grab) { reach = 1; up = 0.15; }
+    else if (attack >= 0) { reach = 1; up = attack < 0.55 ? 0.5 * attack / 0.55 : 0.5 - (attack - 0.55) * 2.2; }
+    for (const [arm, fore, s] of [[B.lArm, B.lFore, -1], [B.rArm, B.rFore, 1]]) {
+      const sw = Math.sin(p * 0.9 + s) * 0.05;
+      _d.copy(fwd).addScaledVector(side, s * (grab ? 0.05 : 0.2) + sw).setY(up - 0.12).normalize();
+      aimBone(arm, _d, reach);
+      _d.copy(fwd).addScaledVector(side, s * 0.05).setY(up + 0.05).normalize();
+      aimBone(fore, _d, reach * 0.85);
+    }
+  }
+
+  // a full procedural zombie gait for bodies without usable clips
+  poseHuman(dt, want, speed, grab) {
+    const H = this.h, B = H.bones;
+    for (const [b, r] of H.rest) { b.quaternion.copy(r.q); }
+    const run = want === 'run', idle = want === 'idle';
+    const rate = run ? 9 : idle ? 1.5 : 4.2 * Math.max(0.5, Math.min(1.4, speed / 1.4));
+    this.phase += dt * (grab ? 9 : rate);
+    this.root.position.copy(this.pos);
+    this.root.rotation.y = this.yaw;
+    this.root.updateMatrixWorld(true);
+    const sy = Math.sin(this.yaw), cy = Math.cos(this.yaw);
+    const fwd = _f.set(sy, 0, cy), side = _r.set(-cy, 0, sy);
+    const p = this.phase, stride = run ? 0.7 : idle ? 0 : 0.38;
+    // straighten the bind pose's arms/legs first: legs straight down
+    for (const [up, leg, foot, s] of [[B.lUp, B.lLeg, B.lFoot, -1], [B.rUp, B.rLeg, B.rFoot, 1]]) {
+      const ph = p + (s > 0 ? Math.PI : 0);
+      const limp = this.limp && s > 0 ? 1 - this.limp : 1;
+      _d.set(0, -1, 0).addScaledVector(fwd, Math.sin(ph) * stride * limp).addScaledVector(side, s * 0.04).normalize();
+      aimBone(up, _d, 1);
+      const bend = Math.max(0, Math.cos(ph)) * (run ? 0.9 : 0.45) * (idle ? 0 : 1);
+      _d.set(0, -1, 0).addScaledVector(fwd, Math.sin(ph) * stride * limp - bend).normalize();
+      aimBone(leg, _d, 1);
+      _d.copy(fwd).setY(-0.35).normalize();
+      aimBone(foot, _d, 1);
+    }
+    const attack = this.attackT > 0 ? 1 - this.attackT / 0.55 : -1;
+    turnBone(B.spine, side, H.hunch + (run ? 0.3 : 0) - this.flinch * 0.7 + (grab ? 0.3 + Math.sin(p) * 0.08 : 0) + (attack > 0.5 ? 0.3 : 0));
+    turnBone(B.spine, fwd, Math.sin(p) * (run ? 0.06 : 0.1));
+    turnBone(B.neck, fwd, this.headTilt * 0.6 + Math.sin(p * 0.37) * 0.12);
+    turnBone(B.head, side, -0.3 + (grab ? Math.sin(p * 1.3) * 0.25 : 0));
+    let reach = run ? 0.0 : H.reach, up = H.armUp + Math.sin(p * 0.9) * 0.06;
+    if (this.lunge) { reach = 1; up = 0.2 + Math.sin(p * 2) * 0.08; }
+    if (grab) { reach = 1; up = 0.15; } else if (attack >= 0) { reach = 1; up = attack < 0.55 ? 0.5 * attack / 0.55 : 0.5 - (attack - 0.55) * 2.2; }
+    for (const [arm, fore, s] of [[B.lArm, B.lFore, -1], [B.rArm, B.rFore, 1]]) {
+      // relaxed hang (or a pumping swing when running) ...
+      const ph = p + (s > 0 ? 0 : Math.PI);
+      _d.set(0, -1, 0).addScaledVector(side, s * 0.18).addScaledVector(fwd, run ? Math.sin(ph) * 0.8 : 0.1).normalize();
+      aimBone(arm, _d, 1);
+      _d.set(0, -1, 0).addScaledVector(fwd, run ? 0.9 : 0.25).normalize();
+      aimBone(fore, _d, 1);
+      // ... then blended toward the zombie reach
+      _d.copy(fwd).addScaledVector(side, s * (grab ? 0.05 : 0.2) + Math.sin(p * 0.9 + s) * 0.05).setY(up - 0.12).normalize();
+      aimBone(arm, _d, reach);
+      _d.copy(fwd).addScaledVector(side, s * 0.05).setY(up + 0.05).normalize();
+      aimBone(fore, _d, reach * 0.85);
+    }
+    const hs = B.hips && H.rest.get(B.hips);
+    if (hs) B.hips.position.y = hs.p.y * (1 - (idle ? 0 : Math.abs(Math.sin(p)) * (run ? 0.05 : 0.025)) - (run ? 0.04 : 0.02));
   }
 
   buildModel() {
@@ -174,6 +286,13 @@ export class Zombie {
 
   // fatal headshot: hide everything above the neck and cap it with a raw stump
   popHead() {
+    if (this.human && !this.headless) {
+      this.headless = true;
+      this.h.u.uHeadless.value = 1;
+      this.h.model.traverse(o => { if (o.isMesh) { o.material.side = THREE.DoubleSide; o.material.needsUpdate = true; } });
+      addStump(this.h.bones.neck);
+      return true;
+    }
     if (!this.useModel || this.headless) return false;
     this.headless = true;
     this.u.uCut.value = this.rig.neckY;
@@ -185,11 +304,14 @@ export class Zombie {
     return true;
   }
 
-  neckWorld(out) { return this.lean.localToWorld(out.set(this.rig.head.c[0], this.rig.neckY - this.rig.hipY, this.rig.head.c[2] * 0.55)); }
+  neckWorld(out) {
+    if (this.human) return this.h.bones.neck.getWorldPosition(out);
+    return this.lean.localToWorld(out.set(this.rig.head.c[0], this.rig.neckY - this.rig.hipY, this.rig.head.c[2] * 0.55)); }
 
-  get radius() { return this.useModel ? this.rig.radius * this.sizeMul : 0.32 * this.def.scale; }
+  get radius() { return this.human ? 0.3 : this.useModel ? this.rig.radius * this.sizeMul : 0.32 * this.def.scale; }
 
   animate(dt, moving, speed) {
+    if (this.human) return this.animateHuman(dt, moving, speed);
     if (this.useModel) return this.animateModel(dt, moving, speed);
     const runner = this.type === 'runner';
     const rate = runner ? 7.5 : this.type === 'brute' ? 3.2 : 4.2;
@@ -238,6 +360,12 @@ export class Zombie {
     this.fall = -1.5 * t * t;
     this.root.rotation.x = this.fall;
     this.root.position.set(this.pos.x, Math.min(0.12, this.deadT * 0.2) * this.def.scale, this.pos.z);
+    if (this.human) {
+      // play the last frames out briefly, then freeze the pose as the body hits the ground
+      if (this.deadT < 0.35 && this.h.mixer) this.h.mixer.update(dt * 0.5);
+      if (this.deadT > 7) { this.root.position.y -= (this.deadT - 7) * 0.4; return this.deadT > 9; }
+      return false;
+    }
     if (this.useModel) {
       const k = Math.min(1, dt * 4), u = this.u;
       u.uLeg.value *= 1 - k; u.uArmL.value += (-2.4 - u.uArmL.value) * k; u.uArmR.value += (-2.2 - u.uArmR.value) * k;

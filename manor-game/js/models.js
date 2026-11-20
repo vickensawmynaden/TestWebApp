@@ -25,13 +25,18 @@ export const RIGS = {
 
 const loaded = {};
 
+// Loads models/<name>.glb, or the .json form on hosts that won't serve .glb files.
+export async function loadGltf(base, name, loader = new GLTFLoader()) {
+  return window.MODEL_EXT === '.json'
+    ? loader.parseAsync(await jsonToGlb(`${base}${name}.json`), base)
+    : loader.loadAsync(`${base}${name}.glb`);
+}
+
 export async function loadModels(base = 'models/') {
   const loader = new GLTFLoader();
   const entries = Object.entries(RIGS);
   await Promise.all(entries.map(async ([type, rig]) => {
-    const gltf = window.MODEL_EXT === '.json'
-      ? await loader.parseAsync(await jsonToGlb(`${base}${rig.file}.json`), base)
-      : await loader.loadAsync(`${base}${rig.file}.glb`);
+    const gltf = await loadGltf(base, rig.file, loader);
     let mesh = null;
     gltf.scene.traverse(o => { if (o.isMesh && !mesh) mesh = o; });
     if (!mesh) throw new Error(`no mesh in ${rig.file}`);

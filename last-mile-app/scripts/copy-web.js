@@ -8,7 +8,7 @@ const src = path.resolve(root, '../manor-game');
 const out = path.join(root, 'www');
 fs.rmSync(out, { recursive: true, force: true });
 const copy = (from, to = from) => fs.cpSync(path.join(src, from), path.join(out, to), { recursive: true });
-['css/style.css', 'css/run.css', 'js/run.js', 'js/textures.js', 'js/models.js', 'js/zombie.js', 'js/audio.js',
+['css/style.css', 'css/run.css', 'js/run.js', 'js/textures.js', 'js/models.js', 'js/zombie.js', 'js/humans.js', 'js/audio.js',
   'vendor/three/three.module.min.js', 'vendor/three/LICENSE', 'vendor/three/addons', 'models', 'icons'].forEach(f => copy(f));
 copy('run.html', 'index.html');
 console.log('Copied Last Mile into', out);
