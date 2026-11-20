@@ -45,6 +45,7 @@ moon.shadow.normalBias = 0.03;
 scene.add(moon, moon.target);
 
 const flashlight = new THREE.SpotLight(0xfff0d2, 70, 34, 0.44, 0.55, 1.6);
+const FLASH_BASE = 70;
 flashlight.position.set(0.18, -0.12, 0.05);
 flashlight.target.position.set(0.02, -0.04, -1);
 if (!isTouch) { flashlight.castShadow = true; flashlight.shadow.mapSize.setScalar(1024); flashlight.shadow.bias = -0.0005; flashlight.shadow.camera.near = 0.3; }
@@ -113,6 +114,95 @@ function splat(x, z, s) {
   m.position.set(x, 0.015 + decalI * 0.0002, z); m.rotation.z = Math.random() * 6; m.scale.setScalar(s); m.visible = true;
 }
 
+// flesh chunks thrown by headshots and heavy kills
+const gibs = (() => {
+  const MAX = 80;
+  const mesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(0.07, 0),
+    new THREE.MeshStandardMaterial({ color: 0x6b0d09, roughness: 0.35, flatShading: true }), MAX);
+  mesh.frustumCulled = false; mesh.castShadow = true; scene.add(mesh);
+  const P = [], m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), sc = new THREE.Vector3(), hide = new THREE.Matrix4().makeScale(0, 0, 0);
+  for (let i = 0; i < MAX; i++) { P.push({ p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Vector3(), life: 0, s: 1, landed: false }); mesh.setMatrixAt(i, hide); }
+  let next = 0;
+  return {
+    emit(at, n, up = 3, out = 3) {
+      for (let k = 0; k < n; k++) {
+        const g = P[next]; next = (next + 1) % MAX;
+        g.p.copy(at); g.v.set((Math.random() - .5) * out, up * (0.5 + Math.random()), (Math.random() - .5) * out);
+        g.r.set(Math.random() * 6, Math.random() * 6, Math.random() * 6); g.life = 6 + Math.random() * 3; g.s = 0.5 + Math.random() * 1.1; g.landed = false;
+      }
+    },
+    update(dt) {
+      for (let i = 0; i < MAX; i++) {
+        const g = P[i];
+        if (g.life <= 0) continue;
+        g.life -= dt;
+        g.v.y -= 9.8 * dt; g.p.addScaledVector(g.v, dt);
+        if (g.p.y < 0.04) {
+          g.p.y = 0.04; g.v.y *= -0.25; g.v.x *= 0.6; g.v.z *= 0.6;
+          if (!g.landed) { g.landed = true; splat(g.p.x, g.p.z, 0.25 + Math.random() * 0.2); }
+        } else g.r.x += dt * 8;
+        const s = g.s * Math.min(1, g.life);
+        e.set(g.r.x, g.r.y, g.r.z); q.setFromEuler(e); sc.set(s, s * 0.7, s);
+        mesh.setMatrixAt(i, g.life > 0 ? m4.compose(g.p, q, sc) : hide);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    },
+  };
+})();
+
+// blood and claw marks painted over the screen
+const gore = (() => {
+  const cv = document.getElementById('gore'), g = cv.getContext('2d');
+  const size = () => { cv.width = Math.round(innerWidth * 0.6); cv.height = Math.round(innerHeight * 0.6); };
+  size(); addEventListener('resize', size);
+  function drop(x, y, r, a) {
+    const gr = g.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(95,0,0,${a})`); gr.addColorStop(0.7, `rgba(120,4,2,${a * 0.85})`); gr.addColorStop(1, 'rgba(120,4,2,0)');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, 7); g.fill();
+  }
+  return {
+    splat(n = 3, big = 1) {
+      const W = cv.width, H = cv.height;
+      for (let i = 0; i < n; i++) {
+        const edge = Math.random() < 0.7;
+        const x = edge ? (Math.random() < .5 ? Math.random() * W * 0.3 : W - Math.random() * W * 0.3) : W * (0.25 + Math.random() * 0.5);
+        const y = Math.random() * H, r = (20 + Math.random() * 45) * big * (W / 600);
+        drop(x, y, r, 0.85);
+        for (let k = 0; k < 10; k++) { const a = Math.random() * 6.28, d = r * (0.8 + Math.random() * 1.6); drop(x + Math.cos(a) * d, y + Math.sin(a) * d, r * (0.08 + Math.random() * 0.2), 0.9); }
+        if (Math.random() < 0.6) { g.fillStyle = 'rgba(100,0,0,.8)'; g.fillRect(x - 2, y, 3 + Math.random() * 3, r * (1 + Math.random() * 2)); }
+      }
+    },
+    slash() {
+      const W = cv.width, H = cv.height, m = Math.min(W, H);
+      const cx = W * (0.3 + Math.random() * 0.4), cy = H * (0.3 + Math.random() * 0.4);
+      const ang = (Math.random() < .5 ? -1 : 1) * (0.5 + Math.random() * 0.5) + Math.PI / 2;
+      const dx = Math.cos(ang), dy = Math.sin(ang), nx = -dy, ny = dx, len = m * (0.55 + Math.random() * 0.25);
+      for (let k = -1.5; k <= 1.5; k += 1) {
+        const ox = cx + nx * k * m * 0.06, oy = cy + ny * k * m * 0.06;
+        for (const [w, col] of [[m * 0.028, 'rgba(110,0,0,.9)'], [m * 0.012, 'rgba(40,0,0,.95)']]) {
+          g.strokeStyle = col; g.lineCap = 'round';
+          for (let t = 0; t < 1; t += 0.05) {
+            const taper = Math.sin(t * Math.PI);
+            g.lineWidth = Math.max(1, w * taper);
+            g.beginPath();
+            g.moveTo(ox + dx * len * (t - 0.5), oy + dy * len * (t - 0.5));
+            g.lineTo(ox + dx * len * (t - 0.45), oy + dy * len * (t - 0.45));
+            g.stroke();
+          }
+        }
+        for (let d = 0; d < 3; d++) { const t = Math.random() - 0.5; g.fillStyle = 'rgba(100,0,0,.8)'; g.fillRect(ox + dx * len * t, oy + dy * len * t, 2, m * (0.03 + Math.random() * 0.1)); }
+      }
+    },
+    update(dt) {
+      g.globalCompositeOperation = 'destination-out';
+      g.fillStyle = `rgba(0,0,0,${Math.min(1, dt * 0.55)})`;
+      g.fillRect(0, 0, cv.width, cv.height);
+      g.globalCompositeOperation = 'source-over';
+    },
+    clear() { g.clearRect(0, 0, cv.width, cv.height); },
+  };
+})();
+
 // ---------------------------------------------------------------- first-person pistol
 const vm = (() => {
   gunScene.add(new THREE.HemisphereLight(0xc8bca8, 0x2a2018, 1.4));
@@ -171,7 +261,7 @@ let zombies = [];
 let pickups = [];
 let hitTargets = [];
 const wave = { n: 0, toSpawn: 0, spawnT: 0, between: true, interT: 4 };
-const fx = { recoil: 0, recoilPitch: 0, bloom: 0, shake: 0, hurt: 0, bobT: 0, swayX: 0, swayY: 0, sprint: 0, flashT: 0, hitT: 0, stepT: 0 };
+const fx = { tilt: 0, slowT: 0, beatT: 0, recoil: 0, recoilPitch: 0, bloom: 0, shake: 0, hurt: 0, bobT: 0, swayX: 0, swayY: 0, sprint: 0, flashT: 0, hitT: 0, stepT: 0 };
 
 function resetGame() {
   for (const z of zombies) scene.remove(z.root);
@@ -182,6 +272,8 @@ function resetGame() {
   for (const d of decals) d.visible = false;
   Object.assign(player, { yaw: 0, pitch: 0, hp: 100, stamina: 1, mag: MAG, reserve: 48, reloading: 0, cd: 0, kills: 0, heads: 0, score: 0, shots: 0, hits: 0, light: true, sprintToggle: false, time: 0, deadT: 0 });
   player.pos.set(0, 0, 2);
+  player.kb = new THREE.Vector3(); player.grab = null; player.grabP = 0;
+  $('grab').classList.add('hidden'); gore.clear();
   Object.assign(wave, { n: 0, toSpawn: 0, spawnT: 0, between: true, interT: 4 });
   flashlight.visible = true;
   rebuildTargets();
@@ -323,7 +415,7 @@ function spawnZombie() {
   const list = far.length ? far : world.spawnPoints;
   const [sx, sz] = list[Math.floor(Math.random() * list.length)];
   const roll = Math.random(), n = wave.n;
-  const type = n >= 3 && roll < Math.min(0.15, 0.03 * n) ? 'brute' : n >= 2 && roll > 1 - Math.min(0.35, 0.07 * n) ? 'runner' : 'walker';
+  const type = n >= 2 && roll < Math.min(0.18, 0.05 * n) ? 'brute' : roll > 1 - Math.min(0.4, 0.12 + 0.06 * n) ? 'runner' : 'walker';
   const z = new Zombie(type, sx + (Math.random() - .5) * 2, sz + (Math.random() - .5) * 2);
   z.speedMul *= 1 + Math.min(0.35, n * 0.03);
   collide(z.pos, z.radius);
@@ -337,15 +429,15 @@ function updateWaves(dt) {
     wave.interT -= dt;
     setSub(`Next wave in ${Math.ceil(Math.max(0, wave.interT))}s`);
     if (wave.interT <= 0) {
-      wave.between = false; wave.n++; wave.toSpawn = 4 + wave.n * 3; wave.spawnT = 0.5;
+      wave.between = false; wave.n++; wave.toSpawn = 5 + wave.n * 3; wave.spawnT = 0.5;
       showMessage(`WAVE ${wave.n}`, 2.2); sfx.sting();
     }
     return;
   }
   setSub(`${alive + wave.toSpawn} undead remaining`);
   wave.spawnT -= dt;
-  if (wave.toSpawn > 0 && wave.spawnT <= 0 && alive < Math.min(18, 7 + wave.n * 2)) {
-    spawnZombie(); wave.toSpawn--; wave.spawnT = Math.max(0.6, 2.2 - wave.n * 0.15);
+  if (wave.toSpawn > 0 && wave.spawnT <= 0 && alive < Math.min(20, 8 + wave.n * 2)) {
+    spawnZombie(); wave.toSpawn--; wave.spawnT = Math.max(0.5, 1.8 - wave.n * 0.15);
   }
   if (wave.toSpawn === 0 && alive === 0) {
     wave.between = true; wave.interT = 9;
@@ -363,23 +455,37 @@ function updateZombies(dt) {
   for (let i = zombies.length - 1; i >= 0; i--) {
     const z = zombies[i];
     if (!z.alive) {
+      if (z.fountainT > 0) {
+        z.fountainT -= dt;
+        z.neckWorld(tmp);
+        blood.emit(tmp, tmp2.set(Math.sin(z.yaw) * 0.3, 1, Math.cos(z.yaw) * 0.3), 4, BLOOD, 3 * Math.min(1, z.fountainT + 0.3), 0.6);
+      }
       if (z.animateDeath(dt)) { scene.remove(z.root); zombies.splice(i, 1); }
       continue;
     }
     const dx = px - z.pos.x, dz = pz - z.pos.z, d = Math.hypot(dx, dz);
     z.losT = (z.losT ?? 0) - dt;
     if (z.losT <= 0) { z.los = d < 16 && gridLOS(z.pos.x, z.pos.z, px, pz); z.losT = 0.2 + Math.random() * 0.1; }
-    z.attackCd -= dt; z.stun -= dt; z.flinch = Math.max(0, z.flinch - dt * 4);
+    z.attackCd -= dt; z.stun -= dt; z.flinch = Math.max(0, z.flinch - dt * 4); z.pounceCd -= dt;
     const reach = z.radius + 0.8;
+    // being shoved back after a hit or a broken grab
+    if (z.kb) { z.pos.x += z.kb.x * dt; z.pos.z += z.kb.z * dt; z.kb.multiplyScalar(Math.exp(-dt * 7)); collide(z.pos, z.radius); if (z.kb.lengthSq() < 0.01) z.kb = null; }
+    if (z.mode === 'grab') { holdGrab(z, dt, dx, dz, d); continue; }
+    if (z.mode === 'wind' || z.mode === 'air') { pounce(z, dt, dx, dz, d, reach); continue; }
+    if (z.type === 'runner' && z.useModel && z.pounceCd <= 0 && z.los && d > 2.8 && d < 7.5 && z.stun <= 0 && z.attackT <= 0 && state === 'play') {
+      z.mode = 'wind'; z.modeT = 0.4; sfx.roar(z.pos.x, 1.4, z.pos.z, 'runner');
+      z.animate(dt, false, 0); continue;
+    }
     if (z.attackT > 0) {
       z.attackT -= dt;
-      if (!z.hitDone && z.attackT < 0.22) { z.hitDone = true; if (d < reach + 0.5 && state === 'play') hurtPlayer(z.def.dmg); }
-    } else if (d < reach && z.attackCd <= 0) {
-      z.attackT = 0.55; z.attackCd = z.type === 'runner' ? 0.9 : 1.3; z.hitDone = false;
+      if (!z.hitDone && z.attackT < 0.22) { z.hitDone = true; if (state === 'play') landAttack(z, d, reach, dx, dz); }
+    } else if (d < reach && z.attackCd <= 0 && z.stun <= 0) {
+      z.attackT = 0.55; z.attackCd = z.type === 'runner' ? 0.8 : z.type === 'brute' ? 1.8 : 1.2; z.hitDone = false;
+      if (z.type === 'brute' || Math.random() < 0.5) sfx.roar(z.pos.x, 1.6, z.pos.z, z.type);
     }
     let speed = z.def.speed * z.speedMul;
     if (z.stun > 0) speed *= 0.2;
-    if (z.attackT > 0) speed *= 0.15;
+    if (z.attackT > 0) speed = z.attackT > 0.3 && z.type !== 'brute' ? 2.6 : speed * 0.15; // lunge in
     const moving = d > z.radius + 0.45;
     if (moving) {
       steer(z, tmp);
@@ -408,11 +514,99 @@ function updateZombies(dt) {
   }
 }
 
+function knockPlayer(dx, dz, d, power) {
+  const k = power / Math.max(0.3, d);
+  player.kb.x += dx * k; player.kb.z += dz * k;
+}
+// a melee hit connects: brutes slam, walkers try to grab, runners claw
+function landAttack(z, d, reach, dx, dz) {
+  if (z.type === 'brute') {
+    if (d > reach + 1.2) return;
+    sfx.slam(); fx.shake = 0.9; fx.tilt = (Math.random() < .5 ? -1 : 1) * 0.18;
+    tmp.set(player.pos.x, 0.05, player.pos.z);
+    dust.emit(tmp, tmp2.set(0, 1, 0), 40, DUST, 4, 3, 0.9);
+    knockPlayer(dx, dz, d, 7);
+    hurtPlayer(z.def.dmg, 'splat');
+    return;
+  }
+  if (d > reach + 0.5) return;
+  if (z.type === 'walker' && !player.grab && player.hp > z.def.dmg && Math.random() < 0.5) { startGrab(z); return; }
+  sfx.slash();
+  knockPlayer(dx, dz, d, 1.5);
+  hurtPlayer(z.def.dmg, 'slash');
+}
+function pounce(z, dt, dx, dz, d, reach) {
+  z.modeT -= dt;
+  if (z.mode === 'wind') {
+    z.yaw = Math.atan2(dx, dz);
+    if (z.modeT <= 0) {
+      z.mode = 'air'; z.modeT = 0.55; z.hitDone = false;
+      const lead = Math.min(d + 0.6, 8.5) / 0.55;
+      z.vel.set(dx / d * lead, 0, dz / d * lead);
+    }
+  } else {
+    z.pos.x += z.vel.x * dt; z.pos.z += z.vel.z * dt;
+    z.pos.y = Math.sin(Math.PI * Math.min(1, 1 - z.modeT / 0.55)) * 0.9;
+    collide(z.pos, z.radius);
+    if (!z.hitDone && d < reach + 0.4 && state === 'play') {
+      z.hitDone = true;
+      sfx.slash(); sfx.bite();
+      knockPlayer(dx, dz, d, 4.5); fx.tilt = (Math.random() < .5 ? -1 : 1) * 0.14;
+      hurtPlayer(z.def.dmg + 8, 'slash');
+      gore.slash();
+    }
+    if (z.modeT <= 0) { z.mode = null; z.pos.y = 0; z.pounceCd = 3 + Math.random() * 2.5; z.stun = 0.35; z.attackCd = 0.6; }
+  }
+  z.animate(dt, false, 0);
+}
+function startGrab(z) {
+  player.grab = z; player.grabP = 0;
+  z.mode = 'grab'; z.biteT = 0.35;
+  $('grab').classList.remove('hidden');
+  $('grab').querySelector('.grab-hint').textContent = isTouch ? 'TAP FIRE TO BREAK FREE' : 'MASH CLICK OR SPACE';
+  sfx.roar(z.pos.x, 1.6, z.pos.z, z.type); fx.shake = 0.6; fx.tilt = 0.12;
+  gore.slash();
+}
+function endGrab(shove) {
+  const z = player.grab;
+  player.grab = null;
+  $('grab').classList.add('hidden');
+  if (!z) return;
+  z.mode = null;
+  if (shove && z.alive) {
+    const dx = z.pos.x - player.pos.x, dz = z.pos.z - player.pos.z, d = Math.hypot(dx, dz) || 1;
+    z.kb = new THREE.Vector3(dx / d * 7, 0, dz / d * 7);
+    z.stun = 1.6; z.attackCd = 2.2; z.flinch = 1;
+    showMessage('BROKE FREE', 0.9); fx.slowT = 0.25; sfx.impact(true);
+  }
+}
+function struggle() {
+  if (!player.grab || state !== 'play') return;
+  player.grabP = Math.min(1, player.grabP + 0.11);
+  fx.shake = Math.max(fx.shake, 0.12);
+  if (player.grabP >= 1) endGrab(true);
+}
+function holdGrab(z, dt, dx, dz, d) {
+  // pin the zombie in your face
+  const hold = z.radius + 0.38 + (z.useModel ? z.rig.head.c[2] * z.rig.scale * z.sizeMul + 0.25 : 0);
+  if (d > 0.01) { z.pos.x = player.pos.x - dx / d * hold; z.pos.z = player.pos.z - dz / d * hold; }
+  z.yaw = Math.atan2(dx, dz);
+  z.biteT -= dt;
+  if (z.biteT <= 0 && state === 'play') {
+    z.biteT = 0.8;
+    sfx.bite(); fx.shake = 0.45; fx.tilt = (Math.random() - .5) * 0.2;
+    z.head.getWorldPosition(tmp); blood.emit(tmp, tmp2.set(-dx, 0.4, -dz).normalize(), 12, BLOOD, 2.5, 1);
+    hurtPlayer(8, 'bite');
+  }
+  z.animate(dt, false, 0);
+}
+
 // ---------------------------------------------------------------- shooting
 const raycaster = new THREE.Raycaster();
 raycaster.far = 90;
 const fwd = new THREE.Vector3(), right = new THREE.Vector3();
 function fire() {
+  if (player.grab) struggle();
   if (state !== 'play' || player.reloading > 0 || player.cd > 0) return;
   if (player.mag === 0) { sfx.empty(); player.cd = 0.25; if (player.reserve > 0) startReload(); return; }
   player.mag--; player.cd = 0.17; player.shots++;
@@ -435,6 +629,8 @@ function fire() {
     const head = hit.object.userData.part === 'head';
     const dmg = head ? 110 : 34;
     zb.hp -= dmg; zb.flinch = 1; zb.stun = zb.type === 'brute' ? 0.12 : 0.3;
+    if (zb.mode !== 'grab' && zb.mode !== 'air') { const push = zb.type === 'brute' ? 0.4 : 1.6; zb.kb = new THREE.Vector3(fwd.x * push, 0, fwd.z * push); }
+    if (head && zb.mode === 'wind') zb.mode = null;
     tmp2.copy(fwd).multiplyScalar(0.6);
     blood.emit(hit.point, tmp2, head ? 30 : 16, BLOOD, head ? 4 : 3, 1.2);
     if (Math.random() < 0.6) splat(hit.point.x + fwd.x * 0.5, hit.point.z + fwd.z * 0.5, 0.4 + Math.random() * 0.5);
@@ -453,13 +649,25 @@ function killZombie(z, head) {
   hitTargets = hitTargets.filter(o => o.userData.zombie !== z);
   player.kills++;
   player.score += z.def.score + (head ? 50 : 0);
+  if (player.grab === z) endGrab(false);
+  z.mode = null; z.pos.y = 0;
+  const near = Math.hypot(z.pos.x - player.pos.x, z.pos.z - player.pos.z);
+  z.head.getWorldPosition(tmp);
   if (head) {
     player.heads++;
     for (const p of z.headParts) p.visible = false;
-    z.head.getWorldPosition(tmp);
-    blood.emit(tmp, tmp2.set(0, 1, 0), 45, BLOOD, 3.5, 2);
+    if (z.popHead()) z.fountainT = 1.6;
+    blood.emit(tmp, tmp2.set(0, 1, 0), 70, BLOOD, 4.5, 2.4);
+    gibs.emit(tmp, 9, 3.5, 4);
     feed('HEADSHOT +50');
+    fx.slowT = 0.22; sfx.gore();
+  } else {
+    tmp.y -= 0.4;
+    blood.emit(tmp, tmp2.set(0, 0.6, 0), 35, BLOOD, 3, 2);
+    gibs.emit(tmp, z.type === 'brute' ? 10 : 4, 2.5, 3);
+    if (z.type === 'brute') { fx.slowT = 0.3; sfx.gore(); }
   }
+  if (near < 3.2) gore.splat(head ? 3 : 2, 1.2);
   splat(z.pos.x, z.pos.z, 1.2 + Math.random() * 0.6);
   const roll = Math.random();
   if (roll < 0.32) spawnPickup('ammo', z.pos.x, z.pos.z);
@@ -469,8 +677,10 @@ function startReload() {
   if (player.reloading > 0 || player.mag === MAG || player.reserve === 0 || state !== 'play') return;
   player.reloading = RELOAD_TIME; sfx.reload();
 }
-function hurtPlayer(dmg) {
-  player.hp -= dmg; fx.hurt = 1; fx.shake = 0.35; sfx.hurt();
+function hurtPlayer(dmg, kind) {
+  player.hp -= dmg; fx.hurt = 1; fx.shake = Math.max(fx.shake, 0.45); sfx.hurt();
+  if (kind === 'slash') gore.slash(); else gore.splat(kind === 'bite' ? 2 : 3, kind === 'bite' ? 0.8 : 1.3);
+  if (player.hp <= 0 && player.grab) { const z = player.grab; player.grab = null; $('grab').classList.add('hidden'); z.mode = null; }
   if (player.hp <= 0) { player.hp = 0; die(); }
 }
 function die() {
@@ -487,6 +697,7 @@ const input = { mx: 0, mz: 0, moveLen: 0, firing: false, lookDX: 0, lookDY: 0, s
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (state !== 'play') return;
+  if (e.code === 'Space') struggle();
   if (e.code === 'KeyR') startReload();
   if (e.code === 'KeyF') toggleLight();
   if (e.code === 'KeyV') toggleView();
@@ -617,7 +828,19 @@ function updateHUD(dt) {
 // ---------------------------------------------------------------- per-frame player update
 function updatePlayer(dt) {
   player.time += dt;
-  player.yaw -= input.lookDX; player.pitch -= input.lookDY;
+  const lookK = player.grab ? 0.15 : 1;
+  player.yaw -= input.lookDX * lookK; player.pitch -= input.lookDY * lookK;
+  if (player.grab) {
+    // forced to stare it in the face while it bites
+    const z = player.grab, gx = z.pos.x - player.pos.x, gz = z.pos.z - player.pos.z;
+    let dy = Math.atan2(-gx, -gz) - player.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    player.yaw += dy * Math.min(1, dt * 8);
+    z.head.getWorldPosition(tmp);
+    const tp = Math.atan2(tmp.y - 1.62, Math.hypot(gx, gz));
+    player.pitch += (tp - player.pitch) * Math.min(1, dt * 6);
+    player.grabP = Math.max(0, player.grabP - dt * 0.14);
+    $('grabfill').style.width = (player.grabP * 100).toFixed(0) + '%';
+  }
   fx.swayX += input.lookDX * 0.5; fx.swayY += input.lookDY * 0.5;
   input.lookDX = input.lookDY = 0;
   player.pitch = Math.max(-1.45, Math.min(1.45, player.pitch));
@@ -630,6 +853,7 @@ function updatePlayer(dt) {
   if (input.tx || input.tz) { mx += input.tx; mz += input.tz; }
   let len = Math.hypot(mx, mz);
   if (len > 1) { mx /= len; mz /= len; len = 1; }
+  if (player.grab) { mx = mz = 0; len = 0; }
   input.moveLen = len;
   const wantSprint = (keys.ShiftLeft || keys.ShiftRight || player.sprintToggle) && mz < -0.3 && player.reloading <= 0;
   const sprinting = wantSprint && player.stamina > 0.05;
@@ -640,6 +864,8 @@ function updatePlayer(dt) {
   const s = Math.sin(player.yaw), c = Math.cos(player.yaw);
   player.pos.x += (mx * c + mz * s) * speed * dt;
   player.pos.z += (-mx * s + mz * c) * speed * dt;
+  player.pos.x += player.kb.x * dt; player.pos.z += player.kb.z * dt;
+  player.kb.multiplyScalar(Math.exp(-dt * 6));
   collide(player.pos, 0.35);
 
   if (len > 0.1) {
@@ -664,6 +890,8 @@ function updatePlayer(dt) {
   fx.bloom = Math.max(0, fx.bloom - dt * 0.05);
   fx.shake = Math.max(0, fx.shake - dt);
   fx.hurt = Math.max(0, fx.hurt - dt * 1.6);
+  fx.tilt *= Math.exp(-dt * 5);
+  if (player.hp < 35) { fx.beatT -= dt; if (fx.beatT <= 0) { sfx.heartbeat(); fx.beatT = 0.55 + player.hp / 60; } }
 }
 
 function placeCamera(dt) {
@@ -672,7 +900,7 @@ function placeCamera(dt) {
   const sh = fx.shake * 0.12;
   right.set(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
   const third = view === 'third' && avatar.ok;
-  camera.rotation.set(player.pitch + fx.recoilPitch + (Math.random() - .5) * sh, player.yaw + (Math.random() - .5) * sh, (Math.random() - .5) * sh * 0.5 + (third ? 0 : Math.cos(fx.bobT) * 0.004));
+  camera.rotation.set(player.pitch + fx.recoilPitch + (Math.random() - .5) * sh, player.yaw + (Math.random() - .5) * sh, (Math.random() - .5) * sh * 0.5 + fx.tilt + (third ? 0 : Math.cos(fx.bobT) * 0.004));
   if (third) {
     // over the right shoulder, pulled in when a wall or ceiling is in the way
     camera.getWorldDirection(fwd);
@@ -692,6 +920,10 @@ function placeCamera(dt) {
     camera.position.set(player.pos.x + right.x * side, eye + bob, player.pos.z + right.z * side);
   }
   const relK = player.reloading > 0 ? Math.sin((1 - player.reloading / RELOAD_TIME) * Math.PI) : 0;
+  // the flashlight blows out a face at point-blank range, so ease it down when one is close
+  let nearest = 99;
+  for (const z of zombies) if (z.alive) nearest = Math.min(nearest, Math.hypot(z.pos.x - player.pos.x, z.pos.z - player.pos.z) - z.radius);
+  flashlight.intensity += (FLASH_BASE * Math.min(1, 0.25 + nearest / 3) - flashlight.intensity) * Math.min(1, dt * 8);
   avatar.update(dt, {
     visible: third && camT > 0.3, x: player.pos.x, z: player.pos.z, yaw: player.yaw, pitch: player.pitch,
     move: Math.min(1, input.moveLen), sprint: fx.sprint, recoil: fx.recoil, reload: relK, hurt: fx.hurt,
@@ -760,8 +992,10 @@ resize();
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, (now - last) / 1000);
+  const realDt = Math.min(0.05, (now - last) / 1000);
   last = now;
+  let dt = realDt;
+  if (fx.slowT > 0) { fx.slowT -= realDt; dt *= 0.2; }
   const t = now / 1000;
   if (state === 'play') {
     updatePlayer(dt);
@@ -778,7 +1012,7 @@ function frame(now) {
   } else if (state === 'menu') {
     player.yaw = Math.sin(t * 0.1) * 0.25; player.pitch = 0.05 + Math.sin(t * 0.13) * 0.03;
   }
-  if (state !== 'paused') { blood.update(dt); dust.update(dt); }
+  if (state !== 'paused') { blood.update(dt); dust.update(dt); gibs.update(dt); gore.update(realDt); }
   updateLights(t);
   placeCamera(state === 'paused' ? 0 : dt);
   renderer.clear();

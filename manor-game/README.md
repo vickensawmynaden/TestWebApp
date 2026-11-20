@@ -10,7 +10,11 @@ and the manor's lamp-lit halls while waves of undead close in.
   The character meshes in `models/` have no skeleton, so `js/models.js` swings their legs and
   arms in the vertex shader around hip/shoulder pivots measured from each mesh. Invisible boxes
   act as body/head hitboxes.
-- Headshots deal triple damage and drop most zombies in one shot.
+- Brutal melee: shamblers **grab** you and bite until you mash fire / Space to break free,
+  werewolves **pounce** from range, ogres **slam** the ground and knock you back. Claw marks and
+  blood land on the screen.
+- Headshots pop the head off (with a neck fountain and flying gibs), kills trigger a short
+  hit-stop, and bullets stagger zombies back.
 - Ammo and medkits are hidden around the manor and dropped by the dead.
 - Zombies path-find around walls and through doorways (flow field over a nav grid).
 - All textures and audio are generated in code; no asset files.

@@ -116,6 +116,75 @@ export class Sfx {
     });
   }
 
+
+  noiseHit(t, type, freq, q, peak, dec, dest) {
+    const c = this.ctx, s = this.src(), f = c.createBiquadFilter(), g = c.createGain();
+    f.type = type; f.frequency.value = freq; f.Q.value = q;
+    this.env(g, t, 0.003, peak, dec);
+    s.connect(f); f.connect(g); g.connect(dest || this.master); s.start(t, Math.random()); s.stop(t + dec + 0.1);
+    return f;
+  }
+  thump(t, f0, f1, peak, dec) {
+    const c = this.ctx, o = c.createOscillator(), g = c.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dec);
+    this.env(g, t, 0.003, peak, dec);
+    o.connect(g); g.connect(this.master); o.start(t); o.stop(t + dec + 0.05);
+  }
+  // wet crunching bite
+  bite() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    for (let i = 0; i < 4; i++) this.noiseHit(t + i * 0.035 + Math.random() * 0.02, 'bandpass', 900 + Math.random() * 1500, 3, 0.55, 0.06);
+    this.noiseHit(t, 'lowpass', 400, 1, 0.8, 0.25);
+    this.thump(t, 120, 50, 0.6, 0.15);
+  }
+  slash() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    const f = this.noiseHit(t, 'highpass', 600, 0.7, 0.7, 0.22);
+    f.frequency.exponentialRampToValueAtTime(4000, t + 0.15);
+    this.noiseHit(t + 0.05, 'lowpass', 700, 1, 0.6, 0.2);
+  }
+  slam() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.thump(t, 90, 22, 1.4, 0.7);
+    this.noiseHit(t, 'lowpass', 300, 0.8, 1.1, 0.9);
+    this.noiseHit(t + 0.02, 'bandpass', 1800, 1, 0.3, 0.3);
+  }
+  gore() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.noiseHit(t, 'lowpass', 900, 1, 0.9, 0.3);
+    for (let i = 0; i < 3; i++) this.noiseHit(t + 0.05 + i * 0.06, 'bandpass', 500 + Math.random() * 600, 2, 0.4, 0.12);
+    this.thump(t, 160, 40, 0.7, 0.2);
+  }
+  heartbeat() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    this.thump(t, 70, 40, 0.7, 0.15); this.thump(t + 0.22, 65, 38, 0.5, 0.15);
+  }
+  // loud, close-range roar for pounces / grabs / slams
+  roar(x, y, z, kind) {
+    if (!this.ctx) return;
+    const c = this.ctx, t = c.currentTime;
+    const pan = c.createPanner();
+    pan.panningModel = 'HRTF'; pan.distanceModel = 'inverse'; pan.refDistance = 3; pan.rolloffFactor = 1;
+    setPos(pan, x, y, z);
+    const out = c.createGain(); out.gain.value = 1.6; out.connect(pan); pan.connect(this.master);
+    const dur = kind === 'brute' ? 1.3 : 0.8;
+    const base = kind === 'brute' ? 48 : kind === 'runner' ? 120 : 85;
+    for (const det of [1, 1.03, 0.5]) {
+      const o = c.createOscillator(); o.type = 'sawtooth';
+      o.frequency.setValueAtTime(base * det * 1.3, t);
+      o.frequency.exponentialRampToValueAtTime(base * det * 0.7, t + dur);
+      const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = kind === 'runner' ? 1800 : 900;
+      const g = c.createGain(); this.env(g, t, 0.05, 0.35, dur);
+      o.connect(f); f.connect(g); g.connect(out); o.start(t); o.stop(t + dur + 0.1);
+    }
+    this.noiseHit(t, 'bandpass', kind === 'runner' ? 1400 : 600, 1.2, 0.6, dur, out);
+  }
+
   // positional groan; listener is updated each frame by setListener
   groan(x, y, z, kind) {
     if (!this.ctx) return;

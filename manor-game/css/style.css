@@ -91,3 +91,11 @@ kbd { display: inline-block; min-width: 54px; padding: 2px 6px; margin-right: 6p
 body.touch .desktop-only, body:not(.touch) .touch-only { display: none; }
 #stats { font-size: 18px; line-height: 1.8; margin-bottom: 24px; color: #d6cbb5; }
 #stats b { color: #fff; }
+
+#gore { position: absolute; inset: 0; width: 100%; height: 100%; }
+#grab { position: absolute; left: 50%; top: 58%; transform: translateX(-50%); text-align: center; width: min(320px, 80vw); }
+.grab-title { font-size: 34px; font-weight: 900; letter-spacing: 4px; color: #ff3b2b; text-shadow: 0 0 18px rgba(255,0,0,.7), 0 2px 4px #000; animation: shakeit .12s infinite; }
+.grab-hint { font-size: 14px; letter-spacing: 3px; font-weight: 800; margin: 6px 0 10px; color: #f3e9d6; text-shadow: 0 1px 4px #000; }
+.grab-bar { height: 12px; border: 2px solid rgba(255,255,255,.7); background: rgba(0,0,0,.6); border-radius: 2px; overflow: hidden; }
+#grabfill { height: 100%; width: 0; background: linear-gradient(90deg, #ffb347, #fff3c4); }
+@keyframes shakeit { 0% { transform: translate(-2px, 1px); } 50% { transform: translate(2px, -1px); } 100% { transform: translate(-1px, -2px); } }

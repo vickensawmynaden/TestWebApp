@@ -8,17 +8,17 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 export const RIGS = {
   player: {
     file: 'lawman', scale: 0.95, radius: 0.3, tint: 0xffffff,
-    hipY: 0.72, shoulderY: 1.45, armX: 0.31, armMinY: 0.62,
+    hipY: 0.72, shoulderY: 1.45, armX: 0.31, armMinY: 0.62, neckY: 1.55,
     body: { c: [0, 0.82, 0], s: [0.62, 1.5, 0.42] }, head: { c: [0, 1.72, 0.03], s: [0.32, 0.36, 0.34] },
   },
   runner: {
     file: 'werewolf', scale: 0.98, radius: 0.4, tint: 0xffffff,
-    hipY: 0.74, shoulderY: 1.38, armX: 0.5, armMinY: 0.24,
+    hipY: 0.74, shoulderY: 1.38, armX: 0.5, armMinY: 0.24, neckY: 1.5,
     body: { c: [0, 0.85, 0.05], s: [1.1, 1.4, 0.8] }, head: { c: [0, 1.7, 0.3], s: [0.5, 0.45, 0.66] },
   },
   brute: {
     file: 'ogre', scale: 0.9, radius: 0.62, tint: 0xffffff,
-    hipY: 0.72, shoulderY: 1.75, armX: 0.74, armMinY: 0.42,
+    hipY: 0.72, shoulderY: 1.75, armX: 0.74, armMinY: 0.42, neckY: 2.06,
     body: { c: [0, 1.0, 0], s: [1.8, 1.95, 1.1] }, head: { c: [0, 2.24, 0.14], s: [0.66, 0.52, 0.62] },
   },
 };
@@ -91,14 +91,17 @@ const CHUNK = /* glsl */`
 export function makeModelMesh(type) {
   const rig = RIGS[type], src = loaded[type];
   const u = {
-    uLeg: { value: 0 }, uArmL: { value: 0 }, uArmR: { value: 0 },
+    uLeg: { value: 0 }, uArmL: { value: 0 }, uArmR: { value: 0 }, uCut: { value: 99 },
     uHipY: { value: rig.hipY }, uShoulderY: { value: rig.shoulderY }, uArmX: { value: rig.armX }, uArmMinY: { value: rig.armMinY },
   };
   const mat = new THREE.MeshStandardMaterial({ map: src.map, color: rig.tint, roughness: 0.85, metalness: 0 });
   mat.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, u);
-    sh.vertexShader = 'uniform float uLeg, uArmL, uArmR, uHipY, uShoulderY, uArmX, uArmMinY;\n' +
-      sh.vertexShader.replace('#include <begin_vertex>', CHUNK);
+    sh.vertexShader = 'uniform float uLeg, uArmL, uArmR, uHipY, uShoulderY, uArmX, uArmMinY;\nvarying float vRigY;\n' +
+      sh.vertexShader.replace('#include <begin_vertex>', CHUNK + '\n  vRigY = position.y;');
+    // head-pop: everything above the neck is discarded after a fatal headshot
+    sh.fragmentShader = 'uniform float uCut;\nvarying float vRigY;\n' +
+      sh.fragmentShader.replace('void main() {', 'void main() {\n  if (vRigY > uCut) discard;');
   };
   mat.customProgramCacheKey = () => 'zrig';
   const mesh = new THREE.Mesh(src.geo, mat);

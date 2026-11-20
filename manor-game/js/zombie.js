@@ -7,9 +7,9 @@ const SHIRTS = [0x3d3a33, 0x4a3b2b, 0x2f3238, 0x51463a, 0x3a2e2a, 0x6a6458];
 const PANTS = [0x23211f, 0x2c2a24, 0x1d2228, 0x3a3127];
 
 export const TYPES = {
-  walker: { hp: 100, speed: 1.15, scale: 1.0, dmg: 14, score: 100 },
-  runner: { hp: 65, speed: 3.1, scale: 0.95, dmg: 10, score: 150 },
-  brute: { hp: 300, speed: 0.95, scale: 1.3, dmg: 30, score: 300 },
+  walker: { hp: 100, speed: 1.4, scale: 1.0, dmg: 12, score: 100 },
+  runner: { hp: 70, speed: 3.4, scale: 0.95, dmg: 14, score: 150 },
+  brute: { hp: 320, speed: 1.15, scale: 1.3, dmg: 34, score: 300 },
 };
 
 const geoCache = {};
@@ -36,6 +36,7 @@ export class Zombie {
     this.phase = Math.random() * 10;
     this.attackT = 0;
     this.attackCd = 0;
+    this.mode = null; this.modeT = 0; this.pounceCd = 1 + Math.random() * 2; this.fountainT = 0;
     this.flinch = 0;
     this.stun = 0;
     this.deadT = 0;
@@ -118,7 +119,7 @@ export class Zombie {
     root.rotation.order = 'YXZ';
     root.scale.setScalar(rig.scale * this.sizeMul);
     const lean = new THREE.Group(); lean.position.y = rig.hipY; root.add(lean); this.lean = lean;
-    mesh.position.y = -rig.hipY; lean.add(mesh);
+    mesh.position.y = -rig.hipY; lean.add(mesh); this.mesh = mesh;
     for (const part of ['body', 'head']) {
       const b = rig[part];
       const hb = new THREE.Mesh(bx(...b.s), hitMat);
@@ -156,13 +157,35 @@ export class Zombie {
       else if (t === 'runner') { aR = -2.2 * wind; aL = -0.6 - (a > 0.55 ? 1.6 * (1 - wind) : 0); lean = 0.35; }
       else { aL = aR = -1.3 - wind * 0.8; lean = 0.14 + (a > 0.55 ? 0.2 : 0); }
     }
+    if (this.mode === 'wind') { lean = 0.75; aL = aR = 0.5; bob = 0.28; leg = 0.45; sway = 0; }
+    else if (this.mode === 'air') { lean = 0.35; aL = -2.3; aR = -2.1; leg = -0.7; bob = 0; }
+    else if (this.mode === 'grab') {
+      const k = Math.sin(this.phase * 7);
+      lean = 0.05 + k * 0.08; aL = -1.55 + k * 0.08; aR = -1.45 - k * 0.08; leg = 0.08 * k; sway = k * 0.05; bob = 0.12;
+    }
     u.uLeg.value = leg; u.uArmL.value = aL; u.uArmR.value = aR;
     this.lean.rotation.x = lean - this.flinch * 0.45;
     this.lean.rotation.z = sway;
     this.lean.position.y = this.rig.hipY - bob;
+    if (this.mode === 'grab') this.phase += dt * 4;
     this.root.position.copy(this.pos);
     this.root.rotation.y = this.yaw;
   }
+
+  // fatal headshot: hide everything above the neck and cap it with a raw stump
+  popHead() {
+    if (!this.useModel || this.headless) return false;
+    this.headless = true;
+    this.u.uCut.value = this.rig.neckY;
+    this.mesh.material.side = THREE.DoubleSide; this.mesh.material.needsUpdate = true;
+    const h = this.rig.head;
+    const stump = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.2, 0.05, 10), goreMat);
+    stump.position.set(h.c[0], this.rig.neckY - this.rig.hipY - 0.01, h.c[2] * 0.55);
+    this.lean.add(stump);
+    return true;
+  }
+
+  neckWorld(out) { return this.lean.localToWorld(out.set(this.rig.head.c[0], this.rig.neckY - this.rig.hipY, this.rig.head.c[2] * 0.55)); }
 
   get radius() { return this.useModel ? this.rig.radius * this.sizeMul : 0.32 * this.def.scale; }
 
