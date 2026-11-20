@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0d12">
+  <title>Last Mile</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/run.css">
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three/three.module.min.js", "three/addons/": "./vendor/three/addons/" } }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <canvas id="gore"></canvas>
+    <div id="vignette"></div>
+    <div id="hurt"></div>
+    <div id="crosshair"><b></b></div>
+    <div id="hitmarker"></div>
+    <div class="run-top">
+      <div id="dist">0<span>m</span></div>
+      <div class="run-sub"><span id="kills">0</span> kills &middot; best <span id="best">0</span>m</div>
+    </div>
+    <div id="message"></div>
+    <div class="run-weapon">
+      <div id="wname">UNARMED</div>
+      <div id="wammo"></div>
+    </div>
+    <div id="pickup-feed"></div>
+  </div>
+
+  <div id="touch" class="hidden">
+    <div id="steer-hint">DRAG TO STEER</div>
+    <button id="btn-fire" class="tbtn fire run-fire" aria-label="Fire"></button>
+    <button id="btn-pause" class="tbtn tiny" aria-label="Pause">II</button>
+  </div>
+
+  <div id="menu" class="overlay">
+    <div class="panel">
+      <h1>LAST<br>MILE</h1>
+      <p class="tag">Keep running. Don't let them touch you.</p>
+      <button id="play" class="big">RUN</button>
+      <div class="controls desktop-only">
+        <div><kbd>A D</kbd> steer</div><div><kbd>Mouse</kbd> steer</div>
+        <div><kbd>Click</kbd> fire</div><div><kbd>Space</kbd> fire</div>
+      </div>
+      <div class="controls touch-only">
+        <div>Drag left / right: steer</div><div>Red button: fire</div>
+      </div>
+      <p class="hint">You run without stopping. Weave through the dead, grab the glowing supply crates for guns and ammo. One touch and it's over.</p>
+      <p class="hint" id="menu-best"></p>
+    </div>
+  </div>
+
+  <div id="pause" class="overlay hidden">
+    <div class="panel"><h2>PAUSED</h2><button id="resume" class="big">RESUME</button></div>
+  </div>
+
+  <div id="dead" class="overlay hidden">
+    <div class="panel">
+      <h2 class="red">CAUGHT</h2>
+      <div id="stats"></div>
+      <button id="retry" class="big">RUN AGAIN</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/run.js"></script>
+</body>
+</html>

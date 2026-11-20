@@ -38,3 +38,15 @@ ES modules need a server; opening `index.html` from disk will not work.
 ## Deploy
 
 Static site: deploy this folder as-is (e.g. Vercel with `vercel.json`, output directory `.`).
+
+## Last Mile (`run.html`)
+
+A second game in the same folder: a first-person endless runner. You sprint forward without
+stopping through procedurally generated night fields (hay bales, fences, wrecks, barns, corn),
+steer around obstacles and the dead, and grab glowing supply crates for a revolver, shotgun or
+rifle with limited ammo. Shots auto-aim at the zombie in front of you. The horde thickens and
+speeds up the further you get; any zombie that reaches you ends the run. Best distance is kept
+in the browser.
+
+Controls: A/D or mouse to steer, click/Space to fire. Touch: drag left/right to steer, red button to fire.
+Open `http://localhost:8080/run.html` after `npm start`.
