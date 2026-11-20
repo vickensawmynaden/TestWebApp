@@ -1,5 +1,6 @@
 // Procedural low-poly zombies with a shambling walk, lunging runners and heavy brutes.
 import * as THREE from 'three';
+import { hasModel, makeModelMesh, RIGS } from './models.js';
 
 const SKINS = [0x6c725e, 0x626854, 0x77725f, 0x585e4e, 0x6e675a, 0x7b7564];
 const SHIRTS = [0x3d3a33, 0x4a3b2b, 0x2f3238, 0x51463a, 0x3a2e2a, 0x6a6458];
@@ -20,6 +21,7 @@ const pick = a => a[Math.floor(Math.random() * a.length)];
 const eyeMat = new THREE.MeshBasicMaterial({ color: 0xd8ff6a });
 const eyeMatRed = new THREE.MeshBasicMaterial({ color: 0xff3a2a });
 const goreMat = new THREE.MeshStandardMaterial({ color: 0x4a0706, roughness: 0.4 });
+const hitMat = new THREE.MeshBasicMaterial({ visible: false });
 const boneMat = new THREE.MeshStandardMaterial({ color: 0xcfc4a8, roughness: 0.7 });
 
 export class Zombie {
@@ -43,7 +45,8 @@ export class Zombie {
     this.headTilt = (Math.random() - 0.5) * 0.6;
     this.limp = Math.random() < 0.4 ? 0.3 + Math.random() * 0.4 : 0;
     this.parts = [];
-    this.build();
+    this.useModel = hasModel(type);
+    if (this.useModel) this.buildModel(); else this.build();
   }
 
   build() {
@@ -105,9 +108,63 @@ export class Zombie {
     root.position.copy(this.pos);
   }
 
-  get radius() { return 0.32 * this.def.scale; }
+  buildModel() {
+    const { mesh, u, rig } = makeModelMesh(this.type);
+    this.u = u; this.rig = rig;
+    const root = new THREE.Group();
+    root.rotation.order = 'YXZ';
+    root.scale.setScalar(rig.scale);
+    const lean = new THREE.Group(); lean.position.y = rig.hipY; root.add(lean); this.lean = lean;
+    mesh.position.y = -rig.hipY; lean.add(mesh);
+    for (const part of ['body', 'head']) {
+      const b = rig[part];
+      const hb = new THREE.Mesh(bx(...b.s), hitMat);
+      hb.position.set(b.c[0], b.c[1] - rig.hipY, b.c[2]);
+      hb.userData.zombie = this; hb.userData.part = part;
+      lean.add(hb); this.parts.push(hb);
+      if (part === 'head') { this.head = hb; this.headParts = [hb]; }
+    }
+    this.root = root;
+    root.position.copy(this.pos);
+  }
+
+  animateModel(dt, moving, speed) {
+    const t = this.type, u = this.u;
+    const rate = t === 'runner' ? 8 : t === 'brute' ? 3.4 : 4.4;
+    this.phase += dt * rate * (moving ? Math.max(0.35, speed / this.def.speed) : 0.25);
+    const p = this.phase, s = Math.sin(p);
+    const m = moving ? 1 : 0.15;
+    let leg, aL, aR, lean, sway, bob;
+    if (t === 'runner') {
+      leg = s * 0.6 * m; aL = s * 0.75 * m - 0.25; aR = -s * 0.75 * m - 0.25;
+      lean = 0.28; sway = Math.sin(p * 0.5) * 0.05; bob = Math.abs(s) * 0.08 * m;
+    } else if (t === 'brute') {
+      leg = s * 0.3 * m; aL = s * 0.3 * m; aR = -s * 0.3 * m;
+      lean = 0.1; sway = s * 0.08 * m; bob = Math.abs(s) * 0.06 * m;
+    } else {
+      leg = s * 0.38 * m * (1 - this.limp * 0.5);
+      aL = -1.2 + Math.sin(p * 0.9) * 0.14; aR = -1.1 + Math.sin(p * 0.9 + 1.3) * 0.14;
+      lean = 0.14; sway = Math.sin(p * 0.5) * 0.1 + this.limp * 0.1; bob = Math.abs(s) * 0.04 * m;
+    }
+    if (this.attackT > 0) {
+      const a = 1 - this.attackT / 0.55;
+      const wind = a < 0.55 ? a / 0.55 : 1 - (a - 0.55) / 0.45;
+      if (t === 'brute') { aL = aR = -2.6 * wind + (a > 0.55 ? -0.3 : 0); lean = 0.1 - wind * 0.15 + (a > 0.55 ? 0.25 : 0); }
+      else if (t === 'runner') { aR = -2.2 * wind; aL = -0.6 - (a > 0.55 ? 1.6 * (1 - wind) : 0); lean = 0.35; }
+      else { aL = aR = -1.3 - wind * 0.8; lean = 0.14 + (a > 0.55 ? 0.2 : 0); }
+    }
+    u.uLeg.value = leg; u.uArmL.value = aL; u.uArmR.value = aR;
+    this.lean.rotation.x = lean - this.flinch * 0.45;
+    this.lean.rotation.z = sway;
+    this.lean.position.y = this.rig.hipY - bob;
+    this.root.position.copy(this.pos);
+    this.root.rotation.y = this.yaw;
+  }
+
+  get radius() { return this.useModel ? this.rig.radius : 0.32 * this.def.scale; }
 
   animate(dt, moving, speed) {
+    if (this.useModel) return this.animateModel(dt, moving, speed);
     const runner = this.type === 'runner';
     const rate = runner ? 7.5 : this.type === 'brute' ? 3.2 : 4.2;
     this.phase += dt * rate * (moving ? Math.max(0.35, speed / this.def.speed) : 0.25);
@@ -155,6 +212,13 @@ export class Zombie {
     this.fall = -1.5 * t * t;
     this.root.rotation.x = this.fall;
     this.root.position.set(this.pos.x, Math.min(0.12, this.deadT * 0.2) * this.def.scale, this.pos.z);
+    if (this.useModel) {
+      const k = Math.min(1, dt * 4), u = this.u;
+      u.uLeg.value *= 1 - k; u.uArmL.value += (-2.4 - u.uArmL.value) * k; u.uArmR.value += (-2.2 - u.uArmR.value) * k;
+      this.lean.rotation.x *= 1 - k;
+      if (this.deadT > 7) { this.root.position.y -= (this.deadT - 7) * 0.4; return this.deadT > 9; }
+      return false;
+    }
     for (const A of this.arms) { A.sh.rotation.x += (-2.6 - A.sh.rotation.x) * Math.min(1, dt * 4); A.sh.rotation.z += (-A.side * 0.6 - A.sh.rotation.z) * Math.min(1, dt * 4); }
     for (const L of this.legs) { L.hp.rotation.x *= 0.92; L.kn.rotation.x += (0.6 - L.kn.rotation.x) * dt * 3; }
     this.torso.rotation.x *= 0.9;

@@ -83,6 +83,7 @@ h2.red { color: #c7392c; text-shadow: 0 0 30px rgba(200,20,10,.6); }
 button.big { pointer-events: auto; font: inherit; font-weight: 800; letter-spacing: 3px; font-size: 18px; padding: 15px 34px; cursor: pointer;
   color: #f1e8d6; background: linear-gradient(#7d1d15, #4b0f0b); border: 1px solid #b5463a; border-radius: 3px; box-shadow: 0 6px 24px rgba(0,0,0,.6); }
 button.big:hover { filter: brightness(1.2); }
+button.big:disabled { opacity: .6; cursor: wait; filter: none; }
 .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; margin: 26px auto 0; max-width: 360px; font-size: 14px; color: #c8bea9; text-align: left; }
 kbd { display: inline-block; min-width: 54px; padding: 2px 6px; margin-right: 6px; border: 1px solid #6c6253; border-radius: 3px; font: 12px monospace; color: #efe6d3; background: rgba(255,255,255,.06); text-align: center; }
 .hint { margin-top: 22px; font-size: 13px; color: #8c826f; }

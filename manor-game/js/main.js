@@ -3,6 +3,7 @@ import { buildWorld, WORLD_HALF } from './world.js';
 import { Zombie } from './zombie.js';
 import { Sfx } from './audio.js';
 import { radial } from './textures.js';
+import { loadModels } from './models.js';
 
 const $ = id => document.getElementById(id);
 const isTouch = matchMedia('(pointer: coarse)').matches || ('ontouchstart' in window && navigator.maxTouchPoints > 0);
@@ -364,7 +365,7 @@ function updateZombies(dt) {
     z.losT = (z.losT ?? 0) - dt;
     if (z.losT <= 0) { z.los = d < 16 && gridLOS(z.pos.x, z.pos.z, px, pz); z.losT = 0.2 + Math.random() * 0.1; }
     z.attackCd -= dt; z.stun -= dt; z.flinch = Math.max(0, z.flinch - dt * 4);
-    const reach = 1.05 * z.def.scale + 0.25;
+    const reach = z.radius + 0.8;
     if (z.attackT > 0) {
       z.attackT -= dt;
       if (!z.hitDone && z.attackT < 0.22) { z.hitDone = true; if (d < reach + 0.5 && state === 'play') hurtPlayer(z.def.dmg); }
@@ -374,7 +375,7 @@ function updateZombies(dt) {
     let speed = z.def.speed * z.speedMul;
     if (z.stun > 0) speed *= 0.2;
     if (z.attackT > 0) speed *= 0.15;
-    const moving = d > 0.75;
+    const moving = d > z.radius + 0.45;
     if (moving) {
       steer(z, tmp);
       // separation from other zombies
@@ -388,7 +389,8 @@ function updateZombies(dt) {
       collide(z.pos, z.radius);
     }
     // keep a sliver of space from the player
-    if (d < 0.65) { z.pos.x -= dx / d * (0.65 - d); z.pos.z -= dz / d * (0.65 - d); }
+    const minD = z.radius + 0.35;
+    if (d < minD) { z.pos.x -= dx / d * (minD - d); z.pos.z -= dz / d * (minD - d); }
     const face = d < 4 || z.los ? Math.atan2(dx, dz) : Math.atan2(tmp.x, tmp.z);
     let da = face - z.yaw; da = Math.atan2(Math.sin(da), Math.cos(da));
     z.yaw += da * Math.min(1, dt * (z.type === 'runner' ? 10 : 5));
@@ -741,10 +743,15 @@ function frame(now) {
   if (state !== 'dead') { renderer.clearDepth(); renderer.render(gunScene, gunCam); }
 }
 resetGame();
+const playBtn = $('play');
+playBtn.disabled = true; playBtn.textContent = 'LOADING…';
+loadModels(window.MODEL_BASE || 'models/')
+  .catch(err => console.warn('Character models failed to load; using fallback zombies.', err))
+  .finally(() => { playBtn.disabled = false; playBtn.textContent = 'ENTER THE ESTATE'; window.__modelsReady = true; });
 $('hud').classList.add('hidden');
 $('message').classList.remove('show');
 requestAnimationFrame(frame);
 
 // debug/test hook
-window.__game = { get state() { return state; }, player, vm, camera, get zombies() { return zombies; }, wave, fire, spawnZombie, computeField,
+window.__game = { get state() { return state; }, player, vm, camera, get zombies() { return zombies; }, wave, fire, spawnZombie, computeField, rebuild: () => rebuildTargets(),
   step(dt, n) { for (let i = 0; i < n; i++) { updatePlayer(dt); updateWaves(dt); updateZombies(dt); updatePickups(dt); } } };

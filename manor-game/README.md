@@ -4,7 +4,10 @@ A first-person zombie survival game that runs in the browser (Three.js, no build
 You start on the drive of a fogbound estate: explore the grounds, the graveyard, the tool shed
 and the manor's lamp-lit halls while waves of undead close in.
 
-- **Walkers** shamble, **runners** sprint at you, **brutes** soak up bullets.
+- **Undead lawmen** shamble, **werewolves** sprint at you, **ogres** soak up bullets.
+  The character meshes in `models/` have no skeleton, so `js/models.js` swings their legs and
+  arms in the vertex shader around hip/shoulder pivots measured from each mesh. Invisible boxes
+  act as body/head hitboxes.
 - Headshots deal triple damage and drop most zombies in one shot.
 - Ammo and medkits are hidden around the manor and dropped by the dead.
 - Zombies path-find around walls and through doorways (flow field over a nav grid).
